@@ -3,6 +3,8 @@
 *.tfstate
 *.tfstate.backup
 *.tfvars    
+.terraform*
+terraform.tfvars.example
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
