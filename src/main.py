@@ -1,30 +1,33 @@
-import os
-import time
-from typing import Optional
+from contextlib import asynccontextmanager
 
-import anthropic
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 
-app = FastAPI(title="LLM Backend")
+from llm import AnthropicLLM, BaseLLM, LLMResult
+from message_builder import build_message
+from models import (
+    GenerateRequest,
+    GenerateResponse,
+    TaskRequest,
+    TaskResponse,
+)
 
-_client: Optional[anthropic.Anthropic] = None
+# ── App lifecycle ─────────────────────────────────────────────────────────────
 
-
-def get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY environment variable not set")
-        _client = anthropic.Anthropic(api_key=api_key)
-    return _client
+_llm: BaseLLM
 
 
-MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _llm
+    _llm = AnthropicLLM()
+    yield
 
-# In-memory aggregate metrics (reset on restart)
-_metrics = {
+
+app = FastAPI(title="LLM Backend", lifespan=lifespan)
+
+# ── In-memory aggregate metrics ───────────────────────────────────────────────
+
+_metrics: dict = {
     "total_requests": 0,
     "total_input_tokens": 0,
     "total_output_tokens": 0,
@@ -32,55 +35,64 @@ _metrics = {
 }
 
 
-class GenerateRequest(BaseModel):
-    prompt: str
-    max_tokens: int = 1024
-    system: Optional[str] = None
+def _record(result: LLMResult) -> None:
+    _metrics["total_requests"] += 1
+    _metrics["total_input_tokens"] += result.input_tokens
+    _metrics["total_output_tokens"] += result.output_tokens
+    _metrics["total_latency_ms"] += result.latency_ms
 
 
-class GenerateResponse(BaseModel):
-    content: str
-    input_tokens: int
-    output_tokens: int
-    latency_ms: float
-
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": MODEL}
+    return {"status": "ok"}
 
 
 @app.post("/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest):
-    client = get_client()
-    kwargs: dict = {
-        "model": MODEL,
-        "max_tokens": req.max_tokens,
-        "messages": [{"role": "user", "content": req.prompt}],
-    }
-    if req.system:
-        kwargs["system"] = req.system
-
-    start = time.time()
+    """Raw LLM call — useful for baselines and direct experiments."""
     try:
-        response = client.messages.create(**kwargs)
-    except anthropic.APIError as e:
+        result = _llm.generate(req.prompt, {}, req.max_tokens, req.system)
+    except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    latency_ms = (time.time() - start) * 1000
 
-    input_tokens = response.usage.input_tokens
-    output_tokens = response.usage.output_tokens
-
-    _metrics["total_requests"] += 1
-    _metrics["total_input_tokens"] += input_tokens
-    _metrics["total_output_tokens"] += output_tokens
-    _metrics["total_latency_ms"] += latency_ms
-
+    _record(result)
     return GenerateResponse(
-        content=response.content[0].text,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        latency_ms=latency_ms,
+        content=result.content,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        latency_ms=result.latency_ms,
+    )
+
+
+@app.post("/task", response_model=TaskResponse)
+def task(req: TaskRequest):
+    """
+    Agent task endpoint. Builds a prompt from the structured request, then
+    calls the LLM. The KVState returned by build_message is passed through to
+    the LLM wrapper — currently a no-op for Anthropic, but will carry prefix
+    cache data when we switch to llama.cpp.
+    """
+    prompt, kv_state = build_message(
+        repo=req.repo,
+        context_files=req.context_files,
+        target_file=req.target_file,
+        task=req.task,
+        branch=req.branch,
+    )
+
+    try:
+        result = _llm.generate(prompt, kv_state, req.max_tokens)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    _record(result)
+    return TaskResponse(
+        content=result.content,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        latency_ms=result.latency_ms,
     )
 
 
@@ -88,7 +100,4 @@ def generate(req: GenerateRequest):
 def get_metrics():
     total = _metrics["total_requests"]
     avg_latency = _metrics["total_latency_ms"] / total if total > 0 else 0.0
-    return {
-        **_metrics,
-        "avg_latency_ms": round(avg_latency, 2),
-    }
+    return {**_metrics, "avg_latency_ms": round(avg_latency, 2)}
