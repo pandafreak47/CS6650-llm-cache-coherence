@@ -1,15 +1,24 @@
+import logging
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 
-from llm import AnthropicLLM, BaseLLM, LLMResult
+from commit import commit
+from llm import BaseLLM, LLMResult, create_llm
 from message_builder import build_message
 from models import (
     GenerateRequest,
     GenerateResponse,
+    TaskAccepted,
     TaskRequest,
-    TaskResponse,
 )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s | %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 
@@ -19,7 +28,8 @@ _llm: BaseLLM
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _llm
-    _llm = AnthropicLLM()
+    _llm = create_llm()
+    logger.info("LLM backend ready: %s", type(_llm).__name__)
     yield
 
 
@@ -40,6 +50,26 @@ def _record(result: LLMResult) -> None:
     _metrics["total_input_tokens"] += result.input_tokens
     _metrics["total_output_tokens"] += result.output_tokens
     _metrics["total_latency_ms"] += result.latency_ms
+
+
+# ── Background task ───────────────────────────────────────────────────────────
+
+def _run_task(request_id: str, req: TaskRequest) -> None:
+    """Full pipeline: build prompt → LLM → commit. Runs after the 202 is sent."""
+    try:
+        prompt, kv_state = build_message(
+            repo=req.repo,
+            context_files=req.context_files,
+            target_file=req.target_file,
+            task=req.task,
+            branch=req.branch,
+        )
+        result = _llm.generate(prompt, kv_state, req.max_tokens)
+        _record(result)
+        commit(req, result)
+        logger.info("task %s completed | %s → %s", request_id, req.repo, req.target_file)
+    except Exception:
+        logger.exception("task %s failed | repo=%s target=%s", request_id, req.repo, req.target_file)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -66,34 +96,16 @@ def generate(req: GenerateRequest):
     )
 
 
-@app.post("/task", response_model=TaskResponse)
-def task(req: TaskRequest):
+@app.post("/task", status_code=202, response_model=TaskAccepted)
+def task(req: TaskRequest, background_tasks: BackgroundTasks):
     """
-    Agent task endpoint. Builds a prompt from the structured request, then
-    calls the LLM. The KVState returned by build_message is passed through to
-    the LLM wrapper — currently a no-op for Anthropic, but will carry prefix
-    cache data when we switch to llama.cpp.
+    Accept a coding task and process it asynchronously. Returns immediately
+    with a request_id. The full pipeline (build → LLM → commit) runs in the
+    background after the response is sent. Failures are logged server-side.
     """
-    prompt, kv_state = build_message(
-        repo=req.repo,
-        context_files=req.context_files,
-        target_file=req.target_file,
-        task=req.task,
-        branch=req.branch,
-    )
-
-    try:
-        result = _llm.generate(prompt, kv_state, req.max_tokens)
-    except RuntimeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-
-    _record(result)
-    return TaskResponse(
-        content=result.content,
-        input_tokens=result.input_tokens,
-        output_tokens=result.output_tokens,
-        latency_ms=result.latency_ms,
-    )
+    request_id = str(uuid.uuid4())
+    background_tasks.add_task(_run_task, request_id, req)
+    return TaskAccepted(request_id=request_id)
 
 
 @app.get("/metrics")

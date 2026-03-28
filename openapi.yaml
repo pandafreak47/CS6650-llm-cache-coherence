@@ -78,16 +78,22 @@ paths:
                   branch: "feature/api-v2"
                   max_tokens: 2048
       responses:
-        '200':
-          description: LLM response to the task
+        '202':
+          description: |
+            Task accepted. Processing runs asynchronously after this response
+            is returned — the caller does not wait for the LLM or commit to
+            complete. Failures are logged server-side. Poll `/metrics` to
+            observe aggregate throughput, or check CloudWatch logs for
+            per-request errors.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskResponse'
+                $ref: '#/components/schemas/TaskAccepted'
+              example:
+                request_id: "a3f1c2d4-89ab-4e12-b456-426614174000"
+                status: "accepted"
         '422':
           $ref: '#/components/responses/ValidationError'
-        '502':
-          $ref: '#/components/responses/UpstreamError'
 
   /generate:
     post:
@@ -159,6 +165,18 @@ paths:
 components:
   schemas:
 
+    TaskAccepted:
+      type: object
+      required: [request_id, status]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: Unique ID for this task. Use it to correlate log entries.
+        status:
+          type: string
+          enum: [accepted]
+
     TaskRequest:
       type: object
       required: [repo, context_files, target_file, task]
@@ -194,24 +212,6 @@ components:
           description: Maximum tokens in the LLM response.
           default: 1024
           minimum: 1
-
-    TaskResponse:
-      type: object
-      required: [content, input_tokens, output_tokens, latency_ms]
-      properties:
-        content:
-          type: string
-          description: Raw LLM output (e.g. the updated file content or a diff).
-        input_tokens:
-          type: integer
-          description: Tokens consumed by the prompt.
-        output_tokens:
-          type: integer
-          description: Tokens produced in the response.
-        latency_ms:
-          type: number
-          format: float
-          description: End-to-end LLM call latency in milliseconds.
 
     GenerateRequest:
       type: object

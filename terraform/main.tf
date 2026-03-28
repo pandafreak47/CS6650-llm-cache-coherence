@@ -35,6 +35,7 @@ module "ecs" {
   ecs_count          = var.ecs_count
   region             = var.aws_region
   env_vars = [
+    { name = "LLM_BACKEND",       value = var.llm_backend },
     { name = "ANTHROPIC_API_KEY", value = var.anthropic_api_key },
     { name = "LLM_MODEL",         value = var.llm_model },
   ]

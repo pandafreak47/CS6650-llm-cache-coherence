@@ -32,14 +32,26 @@ variable "log_retention_days" {
 }
 
 # LLM backend configuration
+variable "llm_backend" {
+  type        = string
+  description = "LLM backend to use: 'anthropic' or 'dummy'"
+  default     = "anthropic"
+  validation {
+    condition     = contains(["anthropic", "dummy"], var.llm_backend)
+    error_message = "llm_backend must be 'anthropic' or 'dummy'."
+    # Add 'llama' here when llama.cpp support is implemented.
+  }
+}
+
 variable "anthropic_api_key" {
   type        = string
-  description = "Anthropic API key passed to the container as an env var"
+  description = "Anthropic API key passed to the container as an env var. Unused when llm_backend = 'dummy'."
   sensitive   = true
+  default     = ""
 }
 
 variable "llm_model" {
   type        = string
-  description = "Claude model ID the backend will use"
+  description = "Claude model ID the backend will use. Unused when llm_backend = 'dummy'."
   default     = "claude-haiku-4-5-20251001"
 }

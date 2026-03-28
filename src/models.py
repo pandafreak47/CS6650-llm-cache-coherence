@@ -34,8 +34,7 @@ class TaskRequest(BaseModel):
     max_tokens: int = 1024
 
 
-class TaskResponse(BaseModel):
-    content: str
-    input_tokens: int
-    output_tokens: int
-    latency_ms: float
+class TaskAccepted(BaseModel):
+    """Returned immediately by POST /task (202 Accepted)."""
+    request_id: str
+    status: str = "accepted"
