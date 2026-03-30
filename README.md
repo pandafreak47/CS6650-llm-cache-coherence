@@ -66,7 +66,9 @@ Pods are scaled horizontally via Terraform (ECS autoscaling on SQS queue depth).
 
 ### KV Cache
 
-Workers maintain a local LRU in-memory KV cache (fixed entry count, evicts least-recently-used). The cache maps an ordered prefix of context file paths to the LLM's KV state after processing those files. This lets a worker skip re-tokenizing context files it has already seen.
+Workers maintain a local LRU in-memory KV cache (fixed entry count, evicts least-recently-used). The cache maps a **set** of context file paths to the LLM's KV state after processing those files. Keys are order-independent — `{a.py, b.py}` and `{b.py, a.py}` are the same cache entry. Lookup finds the largest cached subset of the requested context files, so a partial hit is still useful.
+
+After each successful commit, the worker invalidates every cache entry whose file set includes the modified file, preventing stale KV states from being reused on changed content.
 
 The cache is backed by `KVCacheInterface`, making it straightforward to swap in a centralized Redis-backed implementation.
 
@@ -96,12 +98,13 @@ Fetches all context files and the target file from Git, assembles one large prom
 
 ### Cached
 
-Orders context files by descending size (largest files are most likely shared across tasks). Looks up the longest cached prefix in the KV cache. Processes only the uncached tail incrementally, saving each new KV state. Passes only the target file + task as the final prompt, with the full context living in the KV state.
+Treats context files as a set and finds the largest cached subset. Orders the remaining (uncached) files by descending size — largest files contribute the most tokens and are most likely to be shared with future tasks. Processes only the uncached remainder incrementally, saving each new KV state. Passes only the target file + task as the final prompt, with the full context living in the KV state.
 
 ```
-KV cache hit: [ctx 1, ctx 2] already cached
-Process:      [ctx 3]  →  new KV state [ctx 1, ctx 2, ctx 3] saved
-Final prompt: [target file] [task]  +  KV state  → LLM
+Context files: {ctx1, ctx2, ctx3}
+Cache hit:     {ctx1, ctx2}  →  reuse KV state
+Process:        ctx3         →  new KV state {ctx1, ctx2, ctx3} saved
+Final prompt:  [target file] [task]  +  KV state  →  LLM
 ```
 
 This strategy is the primary vehicle for the caching experiments and is most meaningful with llama.cpp, where KV state is a real reusable tensor.
@@ -145,42 +148,43 @@ Metrics collected per cell: total tokens computed, cache hit rate, mean task lat
 
 *Results will be filled in as experiments are completed.*
 
-### Preliminary: DummyLLM Token Count Baseline (1 pod)
+### Phase 1: DummyLLM Token Count Baseline (1 pod)
 
-| Mode   | Tasks | Total Input Tokens | Cache Hit Rate |
-|--------|-------|--------------------|----------------|
-| Naive  |       |                    | N/A            |
-| Cached |       |                    |                |
+| Mode   | Tasks | Approx. Input Tokens | Cache Hit Rate |
+|--------|-------|----------------------|----------------|
+| Naive  |       |                      | N/A            |
+| Cached |       |                      |                |
 
-### Phase 2: Naive Baseline — llama.cpp
+### Phase 2: Centralized KV Cache — DummyLLM validation
 
-| Workers | Total Tokens Computed | Mean Task Latency (s) | Cache Hit Rate |
-|---------|-----------------------|-----------------------|----------------|
-| 1       |                       |                       | N/A            |
-| 3       |                       |                       | N/A            |
-| 5+      |                       |                       | N/A            |
+| Workers | Cache Entries Written | Cache Hit Rate | Notes |
+|---------|-----------------------|----------------|-------|
+| 3       |                       |                |       |
 
-### Phase 3: Centralized KV Cache
+### Phase 3: Crash Recovery
 
-| Workers | Total Tokens Computed | Mean Task Latency (s) | Cache Hit Rate |
-|---------|-----------------------|-----------------------|----------------|
-| 1       |                       |                       |                |
-| 3       |                       |                       |                |
-| 5+      |                       |                       |                |
+| Scenario | Redelivery Delay (s) | Task Outcome | Notes |
+|----------|--------------------|--------------|-------|
+| Crash before LLM call | | | |
+| Crash after LLM, before commit | | | |
+| Crash after commit, before ack | | | Duplicate commit risk |
 
-### Phase 4: Smart Caching Order
+### Phase 4: llama.cpp — Full Experiment Matrix
 
-| Workers | Total Tokens Computed | Mean Task Latency (s) | Cache Hit Rate |
-|---------|-----------------------|-----------------------|----------------|
-| 1       |                       |                       |                |
-| 3       |                       |                       |                |
-| 5+      |                       |                       |                |
+| Strategy \ Workers         | 1 | 3 | 5+ |
+|----------------------------|---|---|----|
+| Naive (no caching)         |   |   |    |
+| Centralized KV Cache       |   |   |    |
 
-### Phase 5: Crash Recovery
+Metrics per cell: total tokens computed / cache hit rate / mean task latency (s).
 
-| Scenario | Recovery Time (s) | Tasks Lost | Notes |
-|----------|-------------------|------------|-------|
-| Coordinator crash mid-run | | | |
+### Phase 5: Smart Caching Order
+
+| Ordering Strategy | Workers | Total Tokens | Cache Hit Rate | vs. Size-Based |
+|-------------------|---------|--------------|----------------|----------------|
+| Size descending (baseline) | 3 | | | — |
+| Directory grouping | 3 | | | |
+| Git recency | 3 | | | |
 
 ---
 
