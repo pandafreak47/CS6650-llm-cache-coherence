@@ -82,6 +82,7 @@ def _worker_loop() -> None:
             kv_state, output = _llm.generate(prompt=prompt, kv_state=kv_state)
 
             commit_changes(git, msg.target_file, output, msg.task_prompt)
+            cache.invalidate(msg.target_file)
 
             sqs.ack(raw)
             _total_requests += 1

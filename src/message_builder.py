@@ -69,11 +69,10 @@ def build_cached(
 
     Strategy
     --------
-    1. Order context files by size descending (largest files first — they
-       contribute the most to the prefix and are most likely to be shared).
-    2. Find the longest cached prefix for that ordered list.
-    3. Process only the remaining (uncached) files, saving each incremental
-       KV state back to the cache.
+    1. Treat context files as a set — cache lookup is order-independent.
+    2. Find the largest cached subset of the context files.
+    3. Order the remaining (uncached) files by size descending and process
+       them incrementally, saving each new KV state back to the cache.
     4. Build a short prompt containing only the target file and task.
 
     Returns (last_kv_state, short_prompt_string).
@@ -82,27 +81,30 @@ def build_cached(
     incremental calls still work but the short prompt will be missing context.
     Use build_naive with Anthropic until llama.cpp is integrated.
     """
-    context_files = list(msg.context_files)
+    file_set = frozenset(msg.context_files)
 
-    # Order by descending file size so the most-shared content is at the top.
-    sizes = {path: git.get_file_size(path) for path in context_files}
-    ordered = sorted(context_files, key=lambda p: sizes[p], reverse=True)
-
-    # Find the longest matching cached prefix.
-    prefix_result = cache.find_best_prefix(ordered)
+    # Find the largest cached subset.
+    prefix_result = cache.find_best_prefix(file_set)
     if prefix_result is not None:
-        start_idx, kv_state = prefix_result
+        cached_files, kv_state = prefix_result
     else:
-        start_idx, kv_state = 0, KVState()
+        cached_files, kv_state = frozenset(), KVState()
+
+    # Order uncached files by descending size — largest files contribute the
+    # most tokens and are most likely to be shared with future tasks.
+    remaining = file_set - cached_files
+    sizes = {path: git.get_file_size(path) for path in remaining}
+    ordered_remaining = sorted(remaining, key=lambda p: sizes[p], reverse=True)
 
     # Process remaining files incrementally, extending the KV state.
-    for i in range(start_idx, len(ordered)):
-        path = ordered[i]
+    processed = set(cached_files)
+    for path in ordered_remaining:
         content = git.get_file_content(path)
         file_str = _wrap_file(path, content)
         # max_tokens=1 minimises output — we only want the updated KV state.
         kv_state, _ = llm.generate(prompt=file_str, kv_state=kv_state, max_tokens=1)
-        cache.put(make_key(ordered[: i + 1]), kv_state)
+        processed.add(path)
+        cache.put(make_key(processed), kv_state)
 
     # Short prompt: target file + task only (context lives in kv_state).
     target_content = git.get_file_content(msg.target_file)
