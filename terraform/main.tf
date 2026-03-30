@@ -1,5 +1,3 @@
-# Wire together four focused modules: network, ecr, logging, ecs.
-
 module "network" {
   source         = "./modules/network"
   service_name   = var.service_name
@@ -17,7 +15,13 @@ module "logging" {
   retention_in_days = var.log_retention_days
 }
 
-# Reuse an existing IAM role for ECS tasks
+module "sqs" {
+  source                     = "./modules/sqs"
+  queue_name                 = var.service_name
+  visibility_timeout_seconds = var.sqs_visibility_timeout
+}
+
+# Reuse the pre-existing lab IAM role for ECS tasks.
 data "aws_iam_role" "lab_role" {
   name = "LabRole"
 }
@@ -31,24 +35,40 @@ module "ecs" {
   security_group_ids = [module.network.security_group_id]
   execution_role_arn = data.aws_iam_role.lab_role.arn
   task_role_arn      = data.aws_iam_role.lab_role.arn
+  task_role_name     = data.aws_iam_role.lab_role.name
   log_group_name     = module.logging.log_group_name
-  ecs_count          = var.ecs_count
   region             = var.aws_region
+
+  worker_min_count      = var.worker_min_count
+  worker_max_count      = var.worker_max_count
+  scale_out_queue_depth = var.scale_out_queue_depth
+
+  sqs_queue_name = "${var.service_name}.fifo"
+  sqs_queue_arn  = module.sqs.queue_arn
+
   env_vars = [
     { name = "LLM_BACKEND",       value = var.llm_backend },
-    { name = "ANTHROPIC_API_KEY", value = var.anthropic_api_key },
     { name = "LLM_MODEL",         value = var.llm_model },
+    { name = "ANTHROPIC_API_KEY", value = var.anthropic_api_key },
+    { name = "GITHUB_TOKEN",      value = var.github_token },
+    { name = "SQS_QUEUE_URL",     value = module.sqs.queue_url },
+    { name = "AWS_REGION",        value = var.aws_region },
+    { name = "BUILD_MODE",        value = var.build_mode },
+    { name = "KV_CACHE_SIZE",     value = tostring(var.kv_cache_size) },
   ]
 }
 
-# Build and push the LLM backend image into ECR.
-# Runs on every `terraform apply` when src/ changes.
-# For CI/CD pipelines, this block can be moved out and handled separately.
+# ---------------------------------------------------------------------------
+# Build and push the worker image into ECR on every terraform apply.
+# For CI/CD pipelines, move this block to a separate build step.
+# ---------------------------------------------------------------------------
+
 resource "docker_image" "app" {
   name = "${module.ecr.repository_url}:latest"
 
   build {
-    context = "../src"
+    context = "../"
+    dockerfile = "src/Dockerfile"
   }
 }
 
