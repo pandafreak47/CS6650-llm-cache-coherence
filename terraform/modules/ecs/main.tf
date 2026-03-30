@@ -3,6 +3,11 @@ resource "aws_ecs_cluster" "this" {
   name = "${var.service_name}-cluster"
 }
 
+locals {
+  port_mappings = var.container_port != null ? [{ containerPort = var.container_port }] : []
+  command       = length(var.command) > 0 ? var.command : null
+}
+
 # Task Definition
 resource "aws_ecs_task_definition" "this" {
   family                   = "${var.service_name}-task"
@@ -18,10 +23,9 @@ resource "aws_ecs_task_definition" "this" {
     name      = "${var.service_name}-container"
     image     = var.image
     essential = true
+    command   = local.command
 
-    portMappings = [{
-      containerPort = var.container_port
-    }]
+    portMappings = local.port_mappings
 
     environment = var.env_vars
 
@@ -45,8 +49,8 @@ resource "aws_ecs_service" "this" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets         = var.subnet_ids
-    security_groups = var.security_group_ids
+    subnets          = var.subnet_ids
+    security_groups  = var.security_group_ids
     assign_public_ip = true
   }
 }

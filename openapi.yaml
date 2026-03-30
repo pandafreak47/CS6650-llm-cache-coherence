@@ -3,22 +3,26 @@ openapi: 3.0.3
 info:
   title: LLM Backend
   description: |
-    Thin wrapper around an LLM provider (currently Anthropic) used by
-    distributed coding agents in the CS6650 cache-coherence project.
+    LLM backend for the CS6650 distributed cache-coherence project.
+
+    **Architecture:** POST /task enqueues work onto an SQS FIFO queue and
+    returns immediately (202). A pool of ECS worker containers dequeues tasks
+    one at a time and runs the full pipeline: build_message → llm.generate →
+    commit. Scale workers by changing `ecs_worker_count` in terraform.
 
     Two levels of API are exposed:
 
-    - **`/task`** — structured agent endpoint. Accepts a repo, a list of
-      context files, the file to modify, and the task description. The backend
-      assembles the prompt and passes it to the LLM.
-    - **`/generate`** — raw LLM call. Useful for baselines and direct
-      experiments where prompt assembly is handled by the caller.
+    - **`/task`** — structured agent endpoint. Enqueues a repo + context files
+      + target file + task description. Returns a `request_id` for log
+      correlation. Processing is fully asynchronous.
+    - **`/generate`** — raw synchronous LLM call. Useful for baselines and
+      direct experiments where the caller manages prompt assembly.
 
-    `KVState` is an opaque map returned alongside every response. It is empty
-    while the backend uses Anthropic (the API handles prefix caching
-    server-side). When the backend switches to llama.cpp, `KVState` will carry
-    the key/value cache tensors for the shared context prefix so agents can
-    skip reprocessing tokens they have already seen.
+    `KVState` is an opaque map passed between `build_message` and
+    `llm.generate`. It is empty while the backend uses Anthropic (caching is
+    handled server-side). When the backend switches to llama.cpp, `KVState`
+    will carry the KV-cache tensors for the shared context prefix so workers
+    can skip reprocessing tokens they have already seen.
   version: 0.1.0
 
 servers:
@@ -38,22 +42,30 @@ paths:
   /task:
     post:
       tags: [agent]
-      summary: Submit a structured coding task
+      summary: Enqueue a structured coding task
       description: |
-        Builds a prompt from the supplied repository context and task
-        description, calls the LLM, and returns the generated response.
+        Validates the request, assigns a `request_id`, and pushes the task
+        onto the SQS FIFO queue. Returns 202 immediately — the caller does not
+        wait for the LLM or commit to complete.
 
-        The backend assembles the prompt in this order:
+        A worker container dequeues the task and runs the pipeline:
+        1. `build_message` — assembles prompt from repo context + task
+        2. `llm.generate` — calls the LLM backend with the prompt
+        3. `commit` — applies the LLM output back to the repository
+
+        **Prompt assembly order:**
         1. Repository header (repo + branch)
-        2. Contents of each `context_files` entry (read-only reference material)
+        2. Contents of each `context_files` entry (read-only reference)
         3. Contents of `target_file` (the file to be modified)
         4. The `task` instruction
 
-        **KVState note:** once the backend moves to llama.cpp, the shared
-        prefix formed by `context_files` will be cached and reused across
-        agents working on the same repo, reducing redundant token processing.
-        A file-level lock on `target_file` will be added to prevent conflicts
-        between concurrent agents.
+        **Ordering of `context_files` matters for cache efficiency.** Files
+        listed first appear earlier in the prompt and are more likely to be
+        reused as a cached prefix by workers handling the same repository.
+
+        **Failure handling:** tasks that fail `sqs_max_receive_count` times are
+        moved to the dead-letter queue. Check CloudWatch logs with `request_id`
+        to diagnose individual failures.
       requestBody:
         required: true
         content:

@@ -34,6 +34,11 @@ class TaskRequest(BaseModel):
     max_tokens: int = 1024
 
 
+class QueuedTask(TaskRequest):
+    """TaskRequest with a server-assigned request_id for end-to-end tracing."""
+    request_id: str
+
+
 class TaskAccepted(BaseModel):
     """Returned immediately by POST /task (202 Accepted)."""
     request_id: str

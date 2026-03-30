@@ -2,17 +2,17 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 
-from commit import commit
 from llm import BaseLLM, LLMResult, create_llm
-from message_builder import build_message
 from models import (
     GenerateRequest,
     GenerateResponse,
+    QueuedTask,
     TaskAccepted,
     TaskRequest,
 )
+from queue import AbstractQueue, create_queue
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,13 +23,19 @@ logger = logging.getLogger(__name__)
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 
 _llm: BaseLLM
+_queue: AbstractQueue
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _llm
+    global _llm, _queue
     _llm = create_llm()
-    logger.info("LLM backend ready: %s", type(_llm).__name__)
+    _queue = create_queue()
+    logger.info(
+        "Ready | llm=%s queue=%s",
+        type(_llm).__name__,
+        type(_queue).__name__,
+    )
     yield
 
 
@@ -50,26 +56,6 @@ def _record(result: LLMResult) -> None:
     _metrics["total_input_tokens"] += result.input_tokens
     _metrics["total_output_tokens"] += result.output_tokens
     _metrics["total_latency_ms"] += result.latency_ms
-
-
-# ── Background task ───────────────────────────────────────────────────────────
-
-def _run_task(request_id: str, req: TaskRequest) -> None:
-    """Full pipeline: build prompt → LLM → commit. Runs after the 202 is sent."""
-    try:
-        prompt, kv_state = build_message(
-            repo=req.repo,
-            context_files=req.context_files,
-            target_file=req.target_file,
-            task=req.task,
-            branch=req.branch,
-        )
-        result = _llm.generate(prompt, kv_state, req.max_tokens)
-        _record(result)
-        commit(req, result)
-        logger.info("task %s completed | %s → %s", request_id, req.repo, req.target_file)
-    except Exception:
-        logger.exception("task %s failed | repo=%s target=%s", request_id, req.repo, req.target_file)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -97,15 +83,21 @@ def generate(req: GenerateRequest):
 
 
 @app.post("/task", status_code=202, response_model=TaskAccepted)
-def task(req: TaskRequest, background_tasks: BackgroundTasks):
+def task(req: TaskRequest):
     """
-    Accept a coding task and process it asynchronously. Returns immediately
-    with a request_id. The full pipeline (build → LLM → commit) runs in the
-    background after the response is sent. Failures are logged server-side.
+    Enqueue a coding task and return immediately. Processing happens in a
+    separate worker container — the caller should not wait for a result here.
+    Use request_id to correlate log entries in CloudWatch.
     """
-    request_id = str(uuid.uuid4())
-    background_tasks.add_task(_run_task, request_id, req)
-    return TaskAccepted(request_id=request_id)
+    queued = QueuedTask(request_id=str(uuid.uuid4()), **req.model_dump())
+    try:
+        _queue.enqueue(queued)
+    except Exception as e:
+        logger.exception("Failed to enqueue task for %s", req.target_file)
+        raise HTTPException(status_code=503, detail=f"Queue unavailable: {e}")
+
+    logger.info("task %s | enqueued | repo=%s target=%s", queued.request_id, req.repo, req.target_file)
+    return TaskAccepted(request_id=queued.request_id)
 
 
 @app.get("/metrics")

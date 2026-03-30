@@ -10,7 +10,15 @@ variable "image" {
 
 variable "container_port" {
   type        = number
-  description = "Port your app listens on"
+  default     = null
+  nullable    = true
+  description = "Port to expose. Set to null for worker containers that accept no inbound traffic."
+}
+
+variable "command" {
+  type        = list(string)
+  default     = []
+  description = "Override the Docker image CMD. Empty list uses the image default."
 }
 
 variable "subnet_ids" {
