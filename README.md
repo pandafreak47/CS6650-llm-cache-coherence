@@ -167,7 +167,7 @@ Metrics collected per cell: total tokens computed, cache hit rate, mean task lat
 |----------|--------------------|--------------|-------|
 | Crash before LLM call | | | |
 | Crash after LLM, before commit | | | |
-| Crash after commit, before ack | | | Duplicate commit risk |
+| Crash after commit, before ack | | | Duplicate commit — expected and benign, since committing the same change twice is idempotent |
 
 ### Phase 4: llama.cpp — Full Experiment Matrix
 
