@@ -36,51 +36,21 @@
 
 ---
 
-## Phase 2 — Naive Baseline (llama.cpp, Real Metrics)
+## Phase 2 — Centralized KV Cache
 
-**Goal:** Replace DummyLLM with llama.cpp on EC2-backed ECS (Fargate has no GPU support). Establish the ground-truth performance baseline with real token computation and latency.
-
-**Tasks:**
-- Implement `LlamaLLM` with full `KVState` and `metrics()` support
-- Migrate ECS from Fargate to EC2-backed with appropriate GPU/CPU instance type
-- Update Terraform for new compute type
-- Run naive baseline across 1, 3, and 5+ pods — record total tokens, cache hit rate, mean task latency
-
-**Experiment:** Naive (no caching), llama.cpp, 1 / 3 / 5+ workers
-
-| Workers | Total Tokens Computed | Mean Task Latency (s) | Notes |
-|---------|-----------------------|-----------------------|-------|
-| 1       |                       |                       |       |
-| 3       |                       |                       |       |
-| 5+      |                       |                       |       |
-
-**Exit criteria:** Real latency and token numbers in the table. This is the control group — every subsequent phase is compared against it.
-
----
-
-## Phase 3 — Centralized KV Cache
-
-**Goal:** Workers share a single centralized KV cache (Redis or equivalent). A worker that has already processed a set of context files saves its KV state; subsequent workers reuse it instead of recomputing.
+**Goal:** Build the centralized cache infrastructure before introducing a real LLM. This keeps memory pressure off individual pods — the KV states live in Redis, not in each worker's heap — and means the architecture is already in place when llama.cpp is added in Phase 5.
 
 **Tasks:**
-- Implement a Redis-backed `KVCacheInterface` (swap in via the existing interface — no worker code changes)
+- Implement a Redis-backed `KVCacheInterface` (swap in via the existing interface — no worker code changes beyond wiring)
 - Deploy Redis via Terraform (ElastiCache or a sidecar container)
-- Serialize/deserialize llama.cpp KV state to/from Redis
-- Run the same task set across 1, 3, and 5+ pods and compare against Phase 2
+- Validate with DummyLLM: confirm keys are written and read across multiple pods
+- Stub out KV state serialization (real tensors come in Phase 5; for now serialize the empty dict)
 
-**Experiment:** Centralized KV cache, llama.cpp, 1 / 3 / 5+ workers
-
-| Workers | Total Tokens Computed | Mean Task Latency (s) | Cache Hit Rate |
-|---------|-----------------------|-----------------------|----------------|
-| 1       |                       |                       |                |
-| 3       |                       |                       |                |
-| 5+      |                       |                       |                |
-
-**Exit criteria:** Cache hit rate > 0 at 3+ workers. Token savings should grow with worker count as more workers share the same prefix states.
+**Exit criteria:** With 3+ pods running, cache keys written by one pod are successfully read by another. Validated via logs and `/metrics` hit-rate reporting.
 
 ---
 
-## Phase 4 — Crash Recovery
+## Phase 3 — Crash Recovery
 
 **Goal:** Characterize what happens to the system when a worker pod crashes mid-task. SQS visibility timeout provides the recovery mechanism — a message becomes re-visible if not acknowledged within the timeout window.
 
@@ -102,13 +72,37 @@
 
 ---
 
+## Phase 4 — llama.cpp Integration & Full Experiment Matrix
+
+**Goal:** Replace DummyLLM with llama.cpp. The centralized cache and crash recovery are already in place — this phase swaps in the real backend and runs the full experiment matrix. Memory pressure per pod is bounded because KV states live in Redis, not in the worker heap.
+
+**Tasks:**
+- Implement `LlamaLLM` with full `KVState` and `metrics()` support
+- Implement KV state serialization/deserialization to/from Redis
+- Migrate ECS from Fargate to EC2-backed ECS with an appropriate GPU/CPU instance type
+- Update Terraform for new compute type
+- Run the full matrix: naive vs. centralized cache, across 1 / 3 / 5+ pods
+
+**Experiment:** Full matrix, llama.cpp, real token computation
+
+| Strategy \ Workers         | 1 | 3 | 5+ |
+|----------------------------|---|---|----|
+| Naive (no caching)         |   |   |    |
+| Centralized KV Cache       |   |   |    |
+
+Metrics per cell: total tokens computed, cache hit rate, mean task latency (s).
+
+**Exit criteria:** Full matrix populated. Naive baseline established as control group; centralized cache shows measurable improvement in tokens computed and/or latency.
+
+---
+
 ## Phase 5 — Smart Caching Order
 
 **Goal:** Improve cache hit rate by ordering context files more intelligently than simple size-descending. Evaluate whether structural cues (directory proximity, shared git history) improve prefix reuse over the naive size-based order.
 
 **Tasks:**
 - Implement alternative ordering strategies (e.g. group files by directory, order by recency in git log)
-- Compare cache hit rate and total token savings against Phase 3 (size-based order, centralized cache)
+- Compare cache hit rate and total token savings against Phase 4 (size-based order, centralized cache)
 - Run across 1, 3, and 5+ pods
 
 **Experiment:** Smart caching order, llama.cpp, 1 / 3 / 5+ workers
@@ -120,21 +114,6 @@
 | Git recency | 3 | | | |
 
 **Exit criteria:** At least one alternative ordering strategy shows a statistically meaningful improvement in cache hit rate or total tokens over size-based ordering.
-
----
-
-## Full Experiment Matrix
-
-*Complete once all phases are run.*
-
-| Strategy \ Workers         | 1 | 3 | 5+ |
-|----------------------------|---|---|----|
-| Naive (no caching)         |   |   |    |
-| Centralized KV Cache       |   |   |    |
-| Smart caching order        |   |   |    |
-| Distributed cache (stretch)|   |   |    |
-
-Metrics per cell: total tokens computed, cache hit rate, mean task latency (s).
 
 ---
 
