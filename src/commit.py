@@ -1,30 +1,27 @@
 """
-Commit handler — applies LLM output back to the repository.
-
-Currently a dummy implementation that logs intent without touching the
-filesystem or git. Later this will:
-  - Parse result.content to extract the modified file (or a unified diff)
-  - Write the file into a local clone of the repo
-  - Stage, commit, and push via gitpython or subprocess git
-  - Respect the file-level lock on target_file to avoid write conflicts
-    between concurrent agents
+Parses the LLM output and commits the rewritten file back to the repository.
 """
+from __future__ import annotations
 
-import logging
-
-from llm.base import LLMResult
-from models import TaskRequest
-
-logger = logging.getLogger(__name__)
+from .git_client import GitClient
 
 
-def commit(req: TaskRequest, result: LLMResult) -> None:
-    logger.info(
-        "commit | repo=%s branch=%s target=%s | %d tokens in %.1f ms",
-        req.repo,
-        req.branch,
-        req.target_file,
-        result.input_tokens + result.output_tokens,
-        result.latency_ms,
-    )
-    logger.debug("commit | content preview: %.120s", result.content)
+def commit_changes(
+    git: GitClient,
+    target_file: str,
+    llm_output: str,
+    task_prompt: str,
+) -> None:
+    """
+    Write llm_output to target_file, then commit and push.
+
+    The LLM is instructed to emit only raw file content (no markdown fences,
+    no explanation) and to stop at the FILE_CLOSE end-sequence, so llm_output
+    should already be clean file content.  We strip leading/trailing whitespace
+    as a safety measure.
+    """
+    content = llm_output.strip()
+    # Truncate the task prompt to keep commit messages under 72 chars.
+    summary = task_prompt.replace("\n", " ")[:60]
+    commit_message = f"agent: {summary}"
+    git.commit_file(target_file, content, commit_message)

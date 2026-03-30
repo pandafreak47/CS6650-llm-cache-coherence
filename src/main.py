@@ -1,18 +1,33 @@
+"""
+Worker entry point.
+
+Runs two things concurrently:
+  1. A background thread that polls the SQS queue and processes tasks.
+  2. A FastAPI HTTP server exposing /health, /status, /metrics, /metrics/clear.
+"""
+from __future__ import annotations
+
 import logging
-import uuid
+import os
+import threading
 from contextlib import asynccontextmanager
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import FastAPI
 
-from commit import commit
-from llm import BaseLLM, LLMResult, create_llm
-from message_builder import build_message
-from models import (
-    GenerateRequest,
-    GenerateResponse,
-    TaskAccepted,
-    TaskRequest,
+from .commit import commit_changes
+from .git_client import GitClient
+from .kv_cache import InMemoryKVCache
+from .llm import create_llm
+from .llm.interface import InterfaceLLM
+from .message_builder import build_naive, build_cached
+from .models import (
+    HealthResponse,
+    MetricsResponse,
+    SQSMessage,
+    StatusResponse,
+    WorkerStatusEnum,
 )
+from .sqs_client import SQSClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,96 +35,119 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── App lifecycle ─────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Worker state (module-level singletons, written only from the worker thread)
+# ---------------------------------------------------------------------------
 
-_llm: BaseLLM
+_llm: InterfaceLLM
+_status: WorkerStatusEnum = WorkerStatusEnum.STANDBY
+_total_requests: int = 0
+_status_lock = threading.Lock()
 
+_BUILD_MODE = os.environ.get("BUILD_MODE", "naive").lower()  # "naive" | "cached"
+_KV_CACHE_SIZE = int(os.environ.get("KV_CACHE_SIZE", "100"))
+
+# ---------------------------------------------------------------------------
+# SQS worker loop
+# ---------------------------------------------------------------------------
+
+def _worker_loop() -> None:
+    global _status, _total_requests
+
+    queue_url = os.environ["SQS_QUEUE_URL"]
+    sqs = SQSClient(queue_url=queue_url)
+    cache = InMemoryKVCache(capacity=_KV_CACHE_SIZE)
+
+    logger.info("Worker started | mode=%s cache_size=%d", _BUILD_MODE, _KV_CACHE_SIZE)
+
+    while True:
+        raw = sqs.receive(wait_seconds=20)
+        if raw is None:
+            continue  # long-poll timed out, try again
+
+        with _status_lock:
+            _status = WorkerStatusEnum.PROCESSING
+
+        try:
+            msg = SQSMessage.model_validate_json(raw.body)
+            git = GitClient(msg.git_repo)
+
+            logger.info(
+                "Processing | target=%s branch=%s",
+                msg.target_file,
+                msg.git_repo.branch,
+            )
+
+            if _BUILD_MODE == "cached":
+                kv_state, prompt = build_cached(msg, git, _llm, cache)
+            else:
+                kv_state, prompt = build_naive(msg, git)
+
+            kv_state, output = _llm.generate(prompt=prompt, kv_state=kv_state)
+
+            commit_changes(git, msg.target_file, output, msg.task_prompt)
+
+            sqs.ack(raw)
+
+            with _status_lock:
+                _total_requests += 1
+
+            logger.info("Done | target=%s", msg.target_file)
+
+        except Exception:
+            logger.exception("Failed to process message — leaving in queue for redelivery")
+        finally:
+            with _status_lock:
+                _status = WorkerStatusEnum.STANDBY
+
+
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _lifespan(app: FastAPI):
     global _llm
     _llm = create_llm()
     logger.info("LLM backend ready: %s", type(_llm).__name__)
+
+    t = threading.Thread(target=_worker_loop, daemon=True, name="sqs-worker")
+    t.start()
+
     yield
 
 
-app = FastAPI(title="LLM Backend", lifespan=lifespan)
-
-# ── In-memory aggregate metrics ───────────────────────────────────────────────
-
-_metrics: dict = {
-    "total_requests": 0,
-    "total_input_tokens": 0,
-    "total_output_tokens": 0,
-    "total_latency_ms": 0.0,
-}
+app = FastAPI(title="CS6650 LLM Agent Worker", lifespan=_lifespan)
 
 
-def _record(result: LLMResult) -> None:
-    _metrics["total_requests"] += 1
-    _metrics["total_input_tokens"] += result.input_tokens
-    _metrics["total_output_tokens"] += result.output_tokens
-    _metrics["total_latency_ms"] += result.latency_ms
-
-
-# ── Background task ───────────────────────────────────────────────────────────
-
-def _run_task(request_id: str, req: TaskRequest) -> None:
-    """Full pipeline: build prompt → LLM → commit. Runs after the 202 is sent."""
-    try:
-        prompt, kv_state = build_message(
-            repo=req.repo,
-            context_files=req.context_files,
-            target_file=req.target_file,
-            task=req.task,
-            branch=req.branch,
-        )
-        result = _llm.generate(prompt, kv_state, req.max_tokens)
-        _record(result)
-        commit(req, result)
-        logger.info("task %s completed | %s → %s", request_id, req.repo, req.target_file)
-    except Exception:
-        logger.exception("task %s failed | repo=%s target=%s", request_id, req.repo, req.target_file)
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 def health():
-    return {"status": "ok"}
+    return HealthResponse()
 
 
-@app.post("/generate", response_model=GenerateResponse)
-def generate(req: GenerateRequest):
-    """Raw LLM call — useful for baselines and direct experiments."""
-    try:
-        result = _llm.generate(req.prompt, {}, req.max_tokens, req.system)
-    except RuntimeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+@app.get("/status", response_model=StatusResponse)
+def status():
+    with _status_lock:
+        return StatusResponse(status=_status)
 
-    _record(result)
-    return GenerateResponse(
-        content=result.content,
-        input_tokens=result.input_tokens,
-        output_tokens=result.output_tokens,
-        latency_ms=result.latency_ms,
+
+@app.get("/metrics", response_model=MetricsResponse)
+def get_metrics():
+    in_tok, out_tok, latency = _llm.metrics()
+    with _status_lock:
+        reqs = _total_requests
+    return MetricsResponse(
+        total_input_tokens=in_tok,
+        total_output_tokens=out_tok,
+        total_latency_ms=latency,
+        total_requests=reqs,
     )
 
 
-@app.post("/task", status_code=202, response_model=TaskAccepted)
-def task(req: TaskRequest, background_tasks: BackgroundTasks):
-    """
-    Accept a coding task and process it asynchronously. Returns immediately
-    with a request_id. The full pipeline (build → LLM → commit) runs in the
-    background after the response is sent. Failures are logged server-side.
-    """
-    request_id = str(uuid.uuid4())
-    background_tasks.add_task(_run_task, request_id, req)
-    return TaskAccepted(request_id=request_id)
-
-
-@app.get("/metrics")
-def get_metrics():
-    total = _metrics["total_requests"]
-    avg_latency = _metrics["total_latency_ms"] / total if total > 0 else 0.0
-    return {**_metrics, "avg_latency_ms": round(avg_latency, 2)}
+@app.post("/metrics/clear")
+def clear_metrics():
+    global _total_requests
+    _llm.metrics(reset=True)
+    with _status_lock:
+        _total_requests = 0
+    return {"cleared": True}
