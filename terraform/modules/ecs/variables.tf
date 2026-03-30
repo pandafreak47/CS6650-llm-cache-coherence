@@ -50,14 +50,14 @@ variable "region" {
 
 variable "cpu" {
   type        = string
-  default     = "256"
-  description = "vCPU units"
+  default     = "512"
+  description = "Fargate vCPU units (256=0.25, 512=0.5, 1024=1, 2048=2, 4096=4). For llama.cpp switch to EC2-backed ECS with a GPU instance — Fargate has no GPU support."
 }
 
 variable "memory" {
   type        = string
-  default     = "512"
-  description = "Memory (MiB)"
+  default     = "1024"
+  description = "Memory (MiB). Valid Fargate pairs: 512/1024/2048/3072/4096 for 0.5 vCPU; up to 30720 for 4 vCPU. For llama.cpp a 7B 4-bit model alone needs ~5000 MiB."
 }
 
 variable "env_vars" {
