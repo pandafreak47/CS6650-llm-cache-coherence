@@ -6,6 +6,10 @@
 .terraform*
 terraform.tfvars.example
 
+# Artifacts
+.UpdatedProjectPlan.md
+.assignment.txt
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

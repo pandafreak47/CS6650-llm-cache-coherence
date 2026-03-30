@@ -1,40 +1,52 @@
-from typing import Any, Optional
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel
 
-# Opaque KV-cache state. For Anthropic this is always empty — the API handles
-# caching server-side. When we switch to llama.cpp this will carry the actual
-# key/value tensors so the backend can skip re-processing shared prefix tokens.
-KVState = dict[str, Any]
+
+class KVState(BaseModel):
+    """Opaque prefix-cache state passed between LLM calls.
+
+    For Anthropic and DummyLLM this is always empty — they ignore it.
+    For llama.cpp this will carry actual KV-cache tensors.
+    """
+
+    data: dict[str, Any] = {}
 
 
-# ── Raw generation (low-level) ────────────────────────────────────────────────
+class GitRepo(BaseModel):
+    """Everything needed to connect to a specific branch of a GitHub repo."""
 
-class GenerateRequest(BaseModel):
-    prompt: str
-    max_tokens: int = 1024
-    system: Optional[str] = None
-
-
-class GenerateResponse(BaseModel):
-    content: str
-    input_tokens: int
-    output_tokens: int
-    latency_ms: float
+    url: str     # e.g. "https://github.com/owner/repo"
+    branch: str  # e.g. "test-branch-abc123"
 
 
-# ── Agent task (high-level) ───────────────────────────────────────────────────
+class SQSMessage(BaseModel):
+    """Task message consumed from AWS SQS."""
 
-class TaskRequest(BaseModel):
-    repo: str
-    context_files: list[str]
-    target_file: str
-    task: str
-    branch: str = "main"
-    max_tokens: int = 1024
+    git_repo: GitRepo
+    context_files: list[str]  # file paths relative to repo root
+    target_file: str          # file path relative to repo root
+    task_prompt: str
 
 
-class TaskAccepted(BaseModel):
-    """Returned immediately by POST /task (202 Accepted)."""
-    request_id: str
-    status: str = "accepted"
+class WorkerStatusEnum(str, Enum):
+    STANDBY = "standby"
+    PROCESSING = "processing"
+
+
+class HealthResponse(BaseModel):
+    status: str = "ok"
+
+
+class StatusResponse(BaseModel):
+    status: WorkerStatusEnum
+
+
+class MetricsResponse(BaseModel):
+    total_input_tokens: int
+    total_output_tokens: int
+    total_latency_ms: float
+    total_requests: int

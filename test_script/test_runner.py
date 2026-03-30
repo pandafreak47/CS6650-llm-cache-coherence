@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""
+Test runner for the CS6650 LLM cache-coherence experiment.
+
+Steps
+-----
+1. Clone the target repo and read deps.json to discover tasks.
+2. Create a fresh branch off main in the target repo.
+3. Purge any leftover messages from the SQS queue.
+4. Sample --num-tasks tasks (randomly, with optional --seed), seed the queue.
+5. Poll until the queue is fully drained, timing the entire period.
+6. Print per-task throughput stats.
+
+Environment variables
+---------------------
+  SQS_QUEUE_URL     — FIFO queue URL (required)
+  GITHUB_TOKEN      — Personal-access token with repo write permissions
+  TEST_REPO_URL     — HTTPS URL of the target repo  (default below)
+  TEST_BASE_BRANCH  — Branch to fork from           (default: main)
+  AWS_REGION        — AWS region                    (default: us-east-1)
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import random
+import string
+import subprocess
+import sys
+import tempfile
+import time
+
+import boto3
+
+# ---------------------------------------------------------------------------
+# Defaults — override via env vars or CLI flags
+# ---------------------------------------------------------------------------
+
+DEFAULT_REPO_URL = os.environ.get(
+    "TEST_REPO_URL", "https://github.com/pandafreak47/CS6650-test-repo"
+)
+DEFAULT_BASE_BRANCH = os.environ.get("TEST_BASE_BRANCH", "main")
+
+# Prompts are randomly paired with each sampled task.
+TASK_PROMPTS: list[str] = [
+    "Add docstrings to all public functions and methods.",
+    "Add type annotations to all function signatures.",
+    "Add input validation to all public functions.",
+    "Refactor any magic strings or numbers into named constants.",
+    "Add a logging statement at the entry point of each public function.",
+    "Replace bare except clauses with specific exception types.",
+    "Add an __all__ list that exports only the public API.",
+]
+
+# ---------------------------------------------------------------------------
+# Task discovery from deps.json
+# ---------------------------------------------------------------------------
+
+def load_task_pool(repo_url: str, base_branch: str, token: str) -> list[dict]:
+    """
+    Clone the target repo, read deps.json, and return a list of task dicts.
+    Each task has context_files (the file's direct dependencies) and
+    target_file.  Files with no dependencies are included with an empty
+    context so leaf nodes can still be targeted.
+    """
+    auth_url = repo_url.replace("https://", f"https://{token}@") if token else repo_url
+    with tempfile.TemporaryDirectory(prefix="deps-fetch-") as tmp:
+        subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", base_branch, auth_url, tmp],
+            check=True,
+            capture_output=True,
+        )
+        deps_path = os.path.join(tmp, "deps.json")
+        if not os.path.exists(deps_path):
+            print("Error: deps.json not found in repo root.", file=sys.stderr)
+            sys.exit(1)
+        with open(deps_path) as f:
+            deps: dict = json.load(f)
+
+    tasks = []
+    for target, context in deps.items():
+        if target.startswith("_"):   # skip metadata keys like _comment
+            continue
+        tasks.append({"target_file": target, "context_files": context})
+
+    print(f"  Loaded {len(tasks)} tasks from deps.json "
+          f"({sum(1 for t in tasks if t['context_files'])} with context, "
+          f"{sum(1 for t in tasks if not t['context_files'])} leaf nodes).")
+    return tasks
+
+
+def sample_tasks(pool: list[dict], n: int, seed: int | None) -> list[dict]:
+    """
+    Draw n tasks from the pool.  Cycles through all tasks before repeating
+    (so short runs cover the whole graph evenly), then fills remainder randomly.
+    Each sampled task gets a random prompt from TASK_PROMPTS.
+    """
+    rng = random.Random(seed)
+    # Shuffle a full pass through the pool, repeat until we have enough.
+    full_passes = (n // len(pool)) + 1
+    ordered = pool * full_passes
+    rng.shuffle(ordered)
+    selected = ordered[:n]
+    for task in selected:
+        task["task_prompt"] = rng.choice(TASK_PROMPTS)
+    return selected
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _random_id(length: int = 8) -> str:
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
+
+
+def create_test_branch(repo_url: str, base_branch: str, new_branch: str, token: str) -> None:
+    """Clone repo, create branch, push it, then delete the local clone."""
+    auth_url = repo_url.replace("https://", f"https://{token}@") if token else repo_url
+    with tempfile.TemporaryDirectory(prefix="branch-setup-") as tmp:
+        subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", base_branch, auth_url, tmp],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", tmp, "checkout", "-b", new_branch],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", tmp, "push", "-u", "origin", new_branch],
+            check=True,
+            capture_output=True,
+        )
+    print(f"  Created branch: {new_branch}")
+
+
+def purge_queue(sqs, queue_url: str) -> None:
+    print("  Purging existing queue messages…")
+    try:
+        sqs.purge_queue(QueueUrl=queue_url)
+    except sqs.exceptions.PurgeQueueInProgress:
+        print("  Purge already in progress.")
+    # SQS purge can take up to 60 s; poll until depth drops to zero.
+    for _ in range(70):
+        time.sleep(1)
+        attrs = sqs.get_queue_attributes(
+            QueueUrl=queue_url,
+            AttributeNames=["ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible"],
+        )
+        a = attrs["Attributes"]
+        if int(a.get("ApproximateNumberOfMessages", 1)) == 0 and \
+           int(a.get("ApproximateNumberOfMessagesNotVisible", 1)) == 0:
+            print("  Queue empty.")
+            return
+    print("  Warning: queue may not be fully purged — proceeding anyway.")
+
+
+def seed_tasks(sqs, queue_url: str, tasks: list[dict]) -> None:
+    for task in tasks:
+        body_str = json.dumps(task)
+        # Message group ID = sanitised target_file path (gives per-file locking)
+        group_id = task["target_file"].replace("/", "_").replace(".", "_")
+        dedup_id = hashlib.sha256(
+            f"{group_id}:{body_str}:{time.time_ns()}".encode()
+        ).hexdigest()[:40]
+        sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=body_str,
+            MessageGroupId=group_id,
+            MessageDeduplicationId=dedup_id,
+        )
+    print(f"  Sent {len(tasks)} tasks.")
+
+
+def wait_for_drain(sqs, queue_url: str, poll_interval: float = 5.0) -> float:
+    """Block until the queue is empty. Returns elapsed seconds."""
+    start = time.monotonic()
+    while True:
+        attrs = sqs.get_queue_attributes(
+            QueueUrl=queue_url,
+            AttributeNames=[
+                "ApproximateNumberOfMessages",
+                "ApproximateNumberOfMessagesNotVisible",
+            ],
+        )
+        a = attrs["Attributes"]
+        visible = int(a.get("ApproximateNumberOfMessages", 0))
+        in_flight = int(a.get("ApproximateNumberOfMessagesNotVisible", 0))
+        elapsed = time.monotonic() - start
+        print(f"  [{elapsed:6.1f}s] visible={visible}  in-flight={in_flight}", end="\r")
+        if visible + in_flight == 0:
+            print()  # newline after the carriage-return line
+            return elapsed
+        time.sleep(poll_interval)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="CS6650 SQS test runner")
+    parser.add_argument(
+        "--queue-url",
+        default=os.environ.get("SQS_QUEUE_URL"),
+        help="SQS FIFO queue URL (or set SQS_QUEUE_URL env var)",
+    )
+    parser.add_argument(
+        "--num-tasks",
+        type=int,
+        default=50,
+        help="Number of tasks to seed (default: 10)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for task sampling (omit for non-deterministic)",
+    )
+    parser.add_argument(
+        "--repo-url",
+        default=DEFAULT_REPO_URL,
+        help="GitHub repo HTTPS URL",
+    )
+    parser.add_argument(
+        "--base-branch",
+        default=DEFAULT_BASE_BRANCH,
+        help="Branch to fork the test branch from",
+    )
+    parser.add_argument(
+        "--region",
+        default=os.environ.get("AWS_REGION", "us-east-1"),
+    )
+    parser.add_argument(
+        "--skip-branch",
+        action="store_true",
+        help="Skip branch creation (useful when re-running against an existing branch)",
+    )
+    args = parser.parse_args()
+
+    if not args.queue_url:
+        print("Error: --queue-url or SQS_QUEUE_URL is required.", file=sys.stderr)
+        sys.exit(1)
+
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    sqs = boto3.client("sqs", region_name=args.region)
+
+    # --- Load task pool from repo -------------------------------------------
+    print(f"Loading task pool from {args.repo_url} ({args.base_branch})…")
+    pool = load_task_pool(args.repo_url, args.base_branch, github_token)
+
+    # --- Branch setup -------------------------------------------------------
+    branch_id = f"test-{_random_id()}"
+    if args.skip_branch:
+        print(f"Skipping branch creation. Using base branch: {args.base_branch}")
+        branch_id = args.base_branch
+    else:
+        print(f"Creating test branch '{branch_id}' from '{args.base_branch}'…")
+        create_test_branch(args.repo_url, args.base_branch, branch_id, github_token)
+
+    # --- Queue setup --------------------------------------------------------
+    print("Preparing queue…")
+    purge_queue(sqs, args.queue_url)
+
+    print(f"Sampling {args.num_tasks} task(s) (seed={args.seed})…")
+    sampled = sample_tasks(pool, args.num_tasks, args.seed)
+    seeded = [
+        {**t, "git_repo": {"url": args.repo_url, "branch": branch_id}}
+        for t in sampled
+    ]
+
+    print(f"Seeding {args.num_tasks} task(s)…")
+    seed_tasks(sqs, args.queue_url, seeded)
+
+    # --- Drain timing -------------------------------------------------------
+    print("Waiting for queue to drain…")
+    elapsed = wait_for_drain(sqs, args.queue_url)
+
+    # --- Results ------------------------------------------------------------
+    print("\n" + "=" * 50)
+    print(f"  Tasks         : {args.num_tasks}")
+    print(f"  Seed          : {args.seed}")
+    print(f"  Total time    : {elapsed:.2f} s")
+    print(f"  Avg per task  : {elapsed / args.num_tasks:.2f} s")
+    print("=" * 50)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,29 +1,56 @@
-import time
+from __future__ import annotations
+
+import re
 from typing import Optional
 
-from models import KVState
-from .base import BaseLLM, LLMResult
+from .interface import InterfaceLLM, FILE_OPEN, FILE_CLOSE, DEFAULT_END_SEQUENCE
+from ..models import KVState
+
+# Matches every <file path="...">...</file> block in the prompt.
+_FILE_BLOCK = re.compile(r'<file path="[^"]*">(.*?)</file>', re.DOTALL)
 
 
-class DummyLLM(BaseLLM):
+class DummyLLM(InterfaceLLM):
     """
-    No-op LLM for local testing. Skips all network calls and returns the
-    target_file path (passed via kv_state by build_message) as its content.
-    Useful for validating the full request → build → commit pipeline without
-    spending API tokens or requiring credentials.
+    No-op implementation for pipeline testing.
+
+    Parses the last <file ...>...</file> block from the prompt and returns
+    its content unchanged — simulating an LLM that rewrites the target file
+    without modifying anything.
+
+    Output tokens and latency are always zero.
+    Input tokens are approximated as len(prompt) // 4.
     """
+
+    def __init__(self, end_sequence: str = DEFAULT_END_SEQUENCE):
+        self._end_sequence = end_sequence
+        self._total_input_tokens = 0
+        self._total_output_tokens = 0
+        self._total_latency_ms = 0.0
 
     def generate(
         self,
-        message: str,
+        prompt: str,
         kv_state: KVState,
         max_tokens: int = 1024,
         system: Optional[str] = None,
-    ) -> LLMResult:
-        
-        return LLMResult(
-            content="<<SKIP>>", # Skip sequence to indicate no-op response 
-            input_tokens=0,
-            output_tokens=0,
-            latency_ms=0.0,
+    ) -> tuple[KVState, str]:
+        self._total_input_tokens += len(prompt) // 4
+
+        matches = _FILE_BLOCK.findall(prompt)
+        output = matches[-1].strip() if matches else ""
+
+        # Return the given KVState unchanged.
+        return kv_state, output
+
+    def metrics(self, reset: bool = False) -> tuple[int, int, float]:
+        result = (
+            self._total_input_tokens,
+            self._total_output_tokens,
+            self._total_latency_ms,
         )
+        if reset:
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+            self._total_latency_ms = 0.0
+        return result
