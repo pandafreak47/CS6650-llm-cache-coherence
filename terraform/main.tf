@@ -35,7 +35,6 @@ module "ecs" {
   security_group_ids = [module.network.security_group_id]
   execution_role_arn = data.aws_iam_role.lab_role.arn
   task_role_arn      = data.aws_iam_role.lab_role.arn
-  task_role_name     = data.aws_iam_role.lab_role.name
   log_group_name     = module.logging.log_group_name
   region             = var.aws_region
 
@@ -67,8 +66,8 @@ resource "docker_image" "app" {
   name = "${module.ecr.repository_url}:latest"
 
   build {
-    context = "../"
-    dockerfile = "src/Dockerfile"
+    context    = abspath("${path.module}/../src/")
+    dockerfile = "Dockerfile"
   }
 }
 

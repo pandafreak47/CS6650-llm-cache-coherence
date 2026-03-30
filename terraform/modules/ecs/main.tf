@@ -138,25 +138,3 @@ resource "aws_cloudwatch_metric_alarm" "queue_depth_low" {
 
   alarm_actions = [aws_appautoscaling_policy.scale_in.arn]
 }
-
-# ---------------------------------------------------------------------------
-# IAM: grant the task role permissions to read/delete from SQS
-# ---------------------------------------------------------------------------
-
-resource "aws_iam_role_policy" "sqs_access" {
-  name = "${var.service_name}-sqs-access"
-  role = var.task_role_name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = [
-        "sqs:ReceiveMessage",
-        "sqs:DeleteMessage",
-        "sqs:GetQueueAttributes",
-      ]
-      Resource = var.sqs_queue_arn
-    }]
-  })
-}

@@ -33,11 +33,6 @@ variable "task_role_arn" {
   description = "IAM Role ARN for app-level permissions (SQS, etc.)"
 }
 
-variable "task_role_name" {
-  type        = string
-  description = "IAM Role name (used to attach inline policies)"
-}
-
 variable "log_group_name" {
   type        = string
   description = "CloudWatch log group name"
