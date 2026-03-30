@@ -37,7 +37,7 @@ Messages are grouped by `target_file`. SQS delivers only one message per group a
 
 ### Git Server (GitHub)
 
-The shared repository is hosted on GitHub. Workers authenticate via a `GITHUB_TOKEN` injected at deploy time. Workers fetch file contents and commit results using the `git` CLI. Each test run starts from a fresh branch forked off `main`, ensuring a clean baseline.
+The shared repository is hosted on GitHub. Workers authenticate via a `GITHUB_TOKEN` injected at deploy time. Workers fetch file contents and commit results using the `git` CLI. Each test run starts from a fresh branch forked off `main`, ensuring a clean baseline. [repo](https://github.com/pandafreak47/CS6650-test-repo)
 
 ### AI Agent Workers
 
