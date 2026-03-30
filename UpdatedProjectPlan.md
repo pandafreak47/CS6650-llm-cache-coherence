@@ -140,6 +140,8 @@ Centralized KV Cache | | |
 "Smart" caching order | | |
 Distributed cache? | | |
 
+We will also test crash recovery.
+
 ### "Smart" caching
 Currently we build the KV State Context by puting the largest file on the top of the heirarchy, we will later replace that with more advanced logic, considering path structure, git commits, and more
 
