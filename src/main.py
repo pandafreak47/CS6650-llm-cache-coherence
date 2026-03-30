@@ -140,7 +140,7 @@ def get_metrics():
         total_input_tokens=in_tok,
         total_output_tokens=out_tok,
         total_latency_ms=latency,
-        total_requests=reqs,
+        total_requests=_total_requests,
     )
 
 
