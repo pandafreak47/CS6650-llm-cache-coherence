@@ -7,7 +7,7 @@
 
 ## Overview
 
-This project investigates whether distributed AI coding agents can share and reuse LLM prefix-cache state to reduce redundant token computation, and what coherence guarantees are needed to do so correctly. Agents pull coding tasks from a shared queue, read and modify a shared GitHub repository, and call an LLM to perform each task. The central question is: when multiple agents share the same context files, can we avoid re-tokenizing those files for every agent — and what breaks when we try?
+This project investigates whether distributed AI coding agents can share and reuse LLM prefix-cache state to reduce redundant token computation, and what coherence guarantees are needed to do so correctly. Agents pull coding tasks from a shared queue, read and modify a shared GitHub repository, and call an LLM to perform each task. The central question is: when multiple agents share the same context files, can we avoid re-running the attention prefill computation for those files on every agent — and what breaks when we try?
 
 ---
 
