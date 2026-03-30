@@ -39,7 +39,7 @@ variable "worker_min_count" {
 
 variable "worker_max_count" {
   type        = number
-  default     = 5
+  default     = 1
   description = "Maximum Fargate tasks (upper bound for experiments)"
 }
 
@@ -66,7 +66,7 @@ variable "sqs_visibility_timeout" {
 variable "llm_backend" {
   type        = string
   description = "LLM backend: 'anthropic' or 'dummy'"
-  default     = "anthropic"
+  default     = "dummy"
   validation {
     condition     = contains(["anthropic", "dummy"], var.llm_backend)
     error_message = "llm_backend must be 'anthropic' or 'dummy'."
