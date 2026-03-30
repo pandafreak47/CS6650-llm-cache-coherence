@@ -17,8 +17,7 @@ from fastapi import FastAPI
 from .commit import commit_changes
 from .git_client import GitClient
 from .kv_cache import InMemoryKVCache
-from .llm import create_llm
-from .llm.interface import InterfaceLLM
+from .llm import AnthropicLLM, DummyLLM, InterfaceLLM
 from .message_builder import build_naive, build_cached
 from .models import (
     HealthResponse,
@@ -101,7 +100,17 @@ def _worker_loop() -> None:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     global _llm
-    _llm = create_llm()
+    backend = os.getenv("LLM_BACKEND", "dummy").lower()
+    model = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
+    if backend == "anthropic":
+        _llm = AnthropicLLM(model=model)
+    elif backend == "dummy":
+        _llm = DummyLLM()
+    # elif backend == "llama":
+    #     from .llm.llama_llm import LlamaLLM
+    #     _llm = LlamaLLM(model_path=os.environ["LLAMA_MODEL_PATH"])
+    else:
+        raise ValueError(f"Unknown LLM_BACKEND={backend!r}. Valid options: 'anthropic', 'dummy'")
     logger.info("LLM backend ready: %s", type(_llm).__name__)
 
     t = threading.Thread(target=_worker_loop, daemon=True, name="sqs-worker")
