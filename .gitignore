@@ -8,6 +8,7 @@ terraform.tfvars.example
 
 # Artifacts
 .UpdatedProjectPlan.md
+.assignment.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
