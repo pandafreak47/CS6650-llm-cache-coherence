@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 _llm: InterfaceLLM
 _status: WorkerStatusEnum = WorkerStatusEnum.STANDBY
 _total_requests: int = 0
-_status_lock = threading.Lock()
 
 _BUILD_MODE = os.environ.get("BUILD_MODE", "naive").lower()  # "naive" | "cached"
 _KV_CACHE_SIZE = int(os.environ.get("KV_CACHE_SIZE", "100"))
@@ -65,9 +64,7 @@ def _worker_loop() -> None:
         if raw is None:
             continue  # long-poll timed out, try again
 
-        with _status_lock:
-            _status = WorkerStatusEnum.PROCESSING
-
+        _status = WorkerStatusEnum.PROCESSING
         try:
             msg = SQSMessage.model_validate_json(raw.body)
             git = GitClient(msg.git_repo)
@@ -88,17 +85,13 @@ def _worker_loop() -> None:
             commit_changes(git, msg.target_file, output, msg.task_prompt)
 
             sqs.ack(raw)
-
-            with _status_lock:
-                _total_requests += 1
-
+            _total_requests += 1
             logger.info("Done | target=%s", msg.target_file)
 
         except Exception:
             logger.exception("Failed to process message — leaving in queue for redelivery")
         finally:
-            with _status_lock:
-                _status = WorkerStatusEnum.STANDBY
+            _status = WorkerStatusEnum.STANDBY
 
 
 # ---------------------------------------------------------------------------
@@ -127,15 +120,12 @@ def health():
 
 @app.get("/status", response_model=StatusResponse)
 def status():
-    with _status_lock:
-        return StatusResponse(status=_status)
+    return StatusResponse(status=_status)
 
 
 @app.get("/metrics", response_model=MetricsResponse)
 def get_metrics():
     in_tok, out_tok, latency = _llm.metrics()
-    with _status_lock:
-        reqs = _total_requests
     return MetricsResponse(
         total_input_tokens=in_tok,
         total_output_tokens=out_tok,
@@ -148,6 +138,5 @@ def get_metrics():
 def clear_metrics():
     global _total_requests
     _llm.metrics(reset=True)
-    with _status_lock:
-        _total_requests = 0
+    _total_requests = 0
     return {"cleared": True}
