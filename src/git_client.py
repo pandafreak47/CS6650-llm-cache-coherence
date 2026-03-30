@@ -98,5 +98,5 @@ class GitClient:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
             self._run(["git", "add", file_path], cwd=workdir)
-            self._run(["git", "commit", "-m", commit_message], cwd=workdir)
+            self._run(["git", "commit", "--allow-empty", "-m", commit_message], cwd=workdir)
             self._run(["git", "push"], cwd=workdir)
