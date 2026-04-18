@@ -140,6 +140,8 @@ def get_metrics():
     in_tok, out_tok, latency = _llm.metrics()
     cs = _cache.stats()
     return MetricsResponse(
+        llm_backend=os.getenv("LLM_BACKEND", "dummy"),
+        build_mode=_BUILD_MODE,
         total_input_tokens=in_tok,
         total_output_tokens=out_tok,
         total_latency_ms=latency,
