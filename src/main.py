@@ -16,7 +16,7 @@ from fastapi import FastAPI
 
 from .commit import commit_changes
 from .git_client import GitClient
-from .kv_cache import InMemoryKVCache
+from .kv_cache import InMemoryKVCache, KVCacheInterface
 from .llm import AnthropicLLM, DummyLLM, InterfaceLLM
 from .message_builder import build_naive, build_cached
 from .models import (
@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _llm: InterfaceLLM
+_cache: KVCacheInterface
 _status: WorkerStatusEnum = WorkerStatusEnum.STANDBY
 _total_requests: int = 0
 
@@ -54,7 +55,6 @@ def _worker_loop() -> None:
 
     queue_url = os.environ["SQS_QUEUE_URL"]
     sqs = SQSClient(queue_url=queue_url)
-    cache = InMemoryKVCache(capacity=_KV_CACHE_SIZE)
 
     logger.info("Worker started | mode=%s cache_size=%d", _BUILD_MODE, _KV_CACHE_SIZE)
 
@@ -75,14 +75,14 @@ def _worker_loop() -> None:
             )
 
             if _BUILD_MODE == "cached":
-                kv_state, prompt = build_cached(msg, git, _llm, cache)
+                kv_state, prompt = build_cached(msg, git, _llm, _cache)
             else:
                 kv_state, prompt = build_naive(msg, git)
 
             kv_state, output = _llm.generate(prompt=prompt, state=kv_state)
 
             commit_changes(git, msg.target_file, output, msg.task_prompt)
-            cache.invalidate(msg.target_file)
+            _cache.invalidate(msg.target_file)
 
             sqs.ack(raw)
             _total_requests += 1
@@ -100,7 +100,7 @@ def _worker_loop() -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    global _llm
+    global _llm, _cache
     backend = os.getenv("LLM_BACKEND", "dummy").lower()
     model = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
     if backend == "anthropic":
@@ -113,6 +113,8 @@ async def _lifespan(app: FastAPI):
     else:
         raise ValueError(f"Unknown LLM_BACKEND={backend!r}. Valid options: 'anthropic', 'dummy'")
     logger.info("LLM backend ready: %s", type(_llm).__name__)
+
+    _cache = InMemoryKVCache(capacity=_KV_CACHE_SIZE)
 
     t = threading.Thread(target=_worker_loop, daemon=True, name="sqs-worker")
     t.start()
@@ -136,6 +138,7 @@ def status():
 @app.get("/metrics", response_model=MetricsResponse)
 def get_metrics():
     in_tok, out_tok, latency = _llm.metrics()
+    cs = _cache.stats()
     return MetricsResponse(
         total_input_tokens=in_tok,
         total_output_tokens=out_tok,
@@ -143,6 +146,10 @@ def get_metrics():
         total_requests=_total_requests,
         total_cache_read_tokens=getattr(_llm, "total_cache_read_tokens", 0),
         total_cache_creation_tokens=getattr(_llm, "total_cache_creation_tokens", 0),
+        cache_bytes_written=cs.bytes_written,
+        cache_bytes_read=cs.bytes_read,
+        cache_hit_count=cs.hit_count,
+        cache_miss_count=cs.miss_count,
     )
 
 
@@ -150,5 +157,6 @@ def get_metrics():
 def clear_metrics():
     global _total_requests
     _llm.metrics(reset=True)
+    _cache.reset_stats()
     _total_requests = 0
     return {"cleared": True}

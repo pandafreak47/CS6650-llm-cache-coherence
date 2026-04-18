@@ -16,9 +16,12 @@ class LLMState(BaseModel):
 
     Each backend subclasses this and stores whatever it needs to resume
     a prefill from a known point. The base class itself represents an
-    empty / no-op state used by backends that ignore prior context
-    (AnthropicLLM, DummyLLM).
+    empty / no-op state used by backends that ignore prior context.
     """
+
+    def byte_size(self) -> int:
+        """Serialised byte size of this state — used for cache I/O accounting."""
+        return 0
 
 
 class ContentBlock(BaseModel):
@@ -26,9 +29,9 @@ class ContentBlock(BaseModel):
     A single structured text block for the Anthropic messages API.
 
     cache_control is intentionally NOT a field here. It is injected at
-    send time by AnthropicCachedLLM.generate() on the last context block
-    only. Storing it here would corrupt cached states whenever a new block
-    is appended later.
+    send time by AnthropicLLM.generate() on the last context block only.
+    Storing it here would corrupt cached states whenever a new block is
+    appended later.
     """
     type: Literal["text"] = "text"
     text: str
@@ -36,13 +39,16 @@ class ContentBlock(BaseModel):
 
 class AnthropicCachedState(LLMState):
     """
-    State for AnthropicCachedLLM.
+    State backed by real file text as structured content blocks.
 
-    Holds an ordered list of ContentBlocks accumulated via accumulate().
-    Order matters — Anthropic's server-side prefix cache is positional, so
-    all workers must send blocks in the same order to get cache hits.
+    Used by both AnthropicLLM (sends blocks with cache_control markers)
+    and DummyLLM (stores text so cache byte-size metrics are realistic).
+    Order matters — Anthropic's prefix cache is positional.
     """
     blocks: list[ContentBlock] = []
+
+    def byte_size(self) -> int:
+        return sum(len(b.text.encode()) for b in self.blocks)
 
 
 class LlamaKVState(LLMState):
@@ -96,5 +102,11 @@ class MetricsResponse(BaseModel):
     total_output_tokens: int
     total_latency_ms: float
     total_requests: int
+    # Anthropic server-side cache (only populated with LLM_BACKEND=anthropic)
     total_cache_read_tokens: int = 0
     total_cache_creation_tokens: int = 0
+    # Local LLM state cache I/O
+    cache_bytes_written: int = 0
+    cache_bytes_read: int = 0
+    cache_hit_count: int = 0
+    cache_miss_count: int = 0
