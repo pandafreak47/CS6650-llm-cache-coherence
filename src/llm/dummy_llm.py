@@ -51,7 +51,7 @@ class DummyLLM(InterfaceLLM):
         self._total_input_tokens += len(prompt) // 4
 
         matches = _FILE_BLOCK.findall(prompt)
-        output = matches[-1].strip() if matches else ""
+        output = (matches[-1].strip() + "\n# modified by cs6650-agent") if matches else ""
         self._total_output_tokens += len(output) // 4
 
         return state, output
