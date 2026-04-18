@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 from typing import Iterable
 
-from .models import KVState
+from .models import LLMState
 
 # Null-byte separator avoids collisions between paths that share a prefix.
 _SEP = "\x00"
@@ -32,21 +32,21 @@ class KVCacheInterface(ABC):
     """
 
     @abstractmethod
-    def get(self, key: str) -> KVState | None:
-        """Return the cached KVState or None. Marks the entry as recently used."""
+    def get(self, key: str) -> LLMState | None:
+        """Return the cached LLMState or None. Marks the entry as recently used."""
         ...
 
     @abstractmethod
-    def put(self, key: str, value: KVState) -> None:
-        """Store a KVState. Evicts the least-recently-used entry if at capacity."""
+    def put(self, key: str, value: LLMState) -> None:
+        """Store a LLMState. Evicts the least-recently-used entry if at capacity."""
         ...
 
     @abstractmethod
-    def find_best_prefix(self, file_set: frozenset[str]) -> tuple[frozenset[str], KVState] | None:
+    def find_best_prefix(self, file_set: frozenset[str]) -> tuple[frozenset[str], LLMState] | None:
         """
         Find the largest cached subset of file_set.
 
-        Returns (cached_files, KVState) so the caller knows exactly which files
+        Returns (cached_files, LLMState) so the caller knows exactly which files
         are already covered and can process only the remainder.
         Returns None on a total miss.
         """
@@ -68,22 +68,22 @@ class InMemoryKVCache(KVCacheInterface):
 
     def __init__(self, capacity: int = 100):
         self._capacity = capacity
-        self._cache: OrderedDict[str, KVState] = OrderedDict()
+        self._cache: OrderedDict[str, LLMState] = OrderedDict()
 
-    def get(self, key: str) -> KVState | None:
+    def get(self, key: str) -> LLMState | None:
         if key not in self._cache:
             return None
         self._cache.move_to_end(key)  # mark as recently used
         return self._cache[key]
 
-    def put(self, key: str, value: KVState) -> None:
+    def put(self, key: str, value: LLMState) -> None:
         if key in self._cache:
             self._cache.move_to_end(key)
         self._cache[key] = value
         if len(self._cache) > self._capacity:
             self._cache.popitem(last=False)  # evict least-recently-used
 
-    def find_best_prefix(self, file_set: frozenset[str]) -> tuple[frozenset[str], KVState] | None:
+    def find_best_prefix(self, file_set: frozenset[str]) -> tuple[frozenset[str], LLMState] | None:
         """Scan all entries and return the largest cached subset of file_set."""
         best_key: str | None = None
         best_size: int = 0

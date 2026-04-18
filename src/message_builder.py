@@ -12,7 +12,7 @@ from __future__ import annotations
 from .git_client import GitClient
 from .kv_cache import KVCacheInterface, make_key
 from .llm.interface import InterfaceLLM, FILE_OPEN, FILE_CLOSE
-from .models import KVState, SQSMessage
+from .models import LLMState, SQSMessage
 
 # ---------------------------------------------------------------------------
 # Prompt assembly helpers
@@ -36,10 +36,10 @@ def _task_seed(task: str, target_file: str) -> str:
 # Naive build: one monolithic context string, empty KV state
 # ---------------------------------------------------------------------------
 
-def build_naive(msg: SQSMessage, git: GitClient) -> tuple[KVState, str]:
+def build_naive(msg: SQSMessage, git: GitClient) -> tuple[LLMState, str]:
     """
     Fetch every context file and the target file, assemble a single prompt.
-    Returns (empty_KVState, full_context_string).
+    Returns (empty LLMState, full_context_string).
     """
     parts: list[str] = []
 
@@ -51,7 +51,7 @@ def build_naive(msg: SQSMessage, git: GitClient) -> tuple[KVState, str]:
     parts.append(_wrap_file(msg.target_file, target_content))
 
     prompt = "\n\n".join(parts) + "\n\n" + _task_seed(msg.task_prompt, msg.target_file)
-    return KVState(), prompt
+    return LLMState(), prompt
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ def build_cached(
     git: GitClient,
     llm: InterfaceLLM,
     cache: KVCacheInterface,
-) -> tuple[KVState, str]:
+) -> tuple[LLMState, str]:
     """
     Reuse a cached KV state for previously processed context files.
 
@@ -88,7 +88,7 @@ def build_cached(
     if prefix_result is not None:
         cached_files, kv_state = prefix_result
     else:
-        cached_files, kv_state = frozenset(), KVState()
+        cached_files, kv_state = frozenset(), llm.empty_state()
 
     # Order uncached files by descending size — largest files contribute the
     # most tokens and are most likely to be shared with future tasks.
@@ -101,8 +101,7 @@ def build_cached(
     for path in ordered_remaining:
         content = git.get_file_content(path)
         file_str = _wrap_file(path, content)
-        # max_tokens=1 minimises output — we only want the updated KV state.
-        kv_state, _ = llm.generate(prompt=file_str, kv_state=kv_state, max_tokens=1)
+        kv_state = llm.accumulate(prompt=file_str, state=kv_state)
         processed.add(path)
         cache.put(make_key(processed), kv_state)
 

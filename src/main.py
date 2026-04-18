@@ -79,7 +79,7 @@ def _worker_loop() -> None:
             else:
                 kv_state, prompt = build_naive(msg, git)
 
-            kv_state, output = _llm.generate(prompt=prompt, kv_state=kv_state)
+            kv_state, output = _llm.generate(prompt=prompt, state=kv_state)
 
             commit_changes(git, msg.target_file, output, msg.task_prompt)
             cache.invalidate(msg.target_file)
@@ -141,6 +141,8 @@ def get_metrics():
         total_output_tokens=out_tok,
         total_latency_ms=latency,
         total_requests=_total_requests,
+        total_cache_read_tokens=getattr(_llm, "total_cache_read_tokens", 0),
+        total_cache_creation_tokens=getattr(_llm, "total_cache_creation_tokens", 0),
     )
 
 

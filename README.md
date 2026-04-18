@@ -1,4 +1,4 @@
-# LLM Cache Coherence — CS6650 Distributed Systems
+# Shared Prefill Over Distributed AI Agents — CS6650 Distributed Systems
 
 **Course:** CS6650 Distributed Computing Systems
 **Topic:** KV-cache coherence and prefix-cache reuse across distributed LLM coding agents
@@ -17,7 +17,7 @@ This project investigates whether distributed AI coding agents can share and reu
 Test Script ──► AWS SQS ──► AI Agent Workers ◄──► GitHub (Git Server)
                                     ▲
                                     │
-                               KV Cache
+                               LLM State Cache
 ```
 
 ### AWS SQS (Task Queue)
@@ -55,20 +55,20 @@ loop:
 
 Workers also expose a lightweight HTTP server for observability:
 
-| Endpoint         | Description |
-|------------------|-------------|
-| `GET /health`    | Liveness check |
-| `GET /status`    | `standby` or `processing` |
-| `GET /metrics`   | Total input tokens, output tokens, LLM latency, request count |
+| Endpoint              | Description |
+|-----------------------|-------------|
+| `GET /health`         | Liveness check |
+| `GET /status`         | `standby` or `processing` |
+| `GET /metrics`        | Total input tokens, output tokens, LLM latency, request count, Anthropic cache read/write tokens |
 | `POST /metrics/clear` | Reset all counters |
 
 Pods are scaled horizontally via Terraform (ECS autoscaling on SQS queue depth). There is no intra-pod parallelism — one LLM call at a time per pod.
 
-### KV Cache
+### LLM State Cache
 
-Workers maintain a local LRU in-memory KV cache (fixed entry count, evicts least-recently-used). The cache maps a **set** of context file paths to the LLM's KV state after processing those files. Keys are order-independent — `{a.py, b.py}` and `{b.py, a.py}` are the same cache entry. Lookup finds the largest cached subset of the requested context files, so a partial hit is still useful.
+Workers maintain a local LRU in-memory state cache (fixed entry count, evicts least-recently-used). The cache maps a **set** of context file paths to the backend-specific `LLMState` after processing those files. Keys are order-independent — `{a.py, b.py}` and `{b.py, a.py}` are the same cache entry. Lookup finds the largest cached subset of the requested context files, so a partial hit is still useful.
 
-After each successful commit, the worker invalidates every cache entry whose file set includes the modified file, preventing stale KV states from being reused on changed content.
+After each successful commit, the worker invalidates every cache entry whose file set includes the modified file, preventing stale states from being reused on changed content.
 
 The cache is backed by `KVCacheInterface`, making it straightforward to swap in a centralized Redis-backed implementation.
 
@@ -90,7 +90,7 @@ The LLM is seeded to emit only the rewritten file content, terminated by `</file
 
 ### Naive
 
-Fetches all context files and the target file from Git, assembles one large prompt string. KV state is always empty. Simple and correct for all LLM backends.
+Fetches all context files and the target file from Git, assembles one large prompt string. State is always empty. Simple and correct for all LLM backends.
 
 ```
 [context file 1] [context file 2] ... [target file] [task] → LLM
@@ -98,16 +98,18 @@ Fetches all context files and the target file from Git, assembles one large prom
 
 ### Cached
 
-Treats context files as a set and finds the largest cached subset. Orders the remaining (uncached) files by descending size — largest files contribute the most tokens and are most likely to be shared with future tasks. Processes only the uncached remainder incrementally, saving each new KV state. Passes only the target file + task as the final prompt, with the full context living in the KV state.
+Treats context files as a set and finds the largest cached subset. Orders the remaining (uncached) files by descending size — largest files contribute the most tokens and are most likely to be shared with future tasks. Calls `llm.accumulate()` for each uncached file to extend the state without generating output, saving each new state to the cache. Passes only the target file + task as the final prompt, with the full context carried in the state.
 
 ```
 Context files: {ctx1, ctx2, ctx3}
-Cache hit:     {ctx1, ctx2}  →  reuse KV state
-Process:        ctx3         →  new KV state {ctx1, ctx2, ctx3} saved
-Final prompt:  [target file] [task]  +  KV state  →  LLM
+Cache hit:     {ctx1, ctx2}  →  reuse state
+Accumulate:     ctx3         →  new state {ctx1, ctx2, ctx3} saved
+Final prompt:  [target file] [task]  +  state  →  LLM
 ```
 
-This strategy is the primary vehicle for the caching experiments and is most meaningful with llama.cpp, where KV state is a real reusable tensor.
+For `AnthropicLLM`, accumulation is free — no API call is made. The state holds content blocks that are re-sent with `cache_control` markers on the real generation call, triggering Anthropic's server-side prefix cache.
+
+For `LlamaLLM` (planned), accumulation runs the actual prefill computation and stores real KV tensors.
 
 ---
 
@@ -117,15 +119,38 @@ All backends implement the same interface:
 
 ```python
 class InterfaceLLM:
-    def generate(prompt, kv_state, max_tokens, system) -> (KVState, str)
+    def generate(prompt, state, max_tokens, system) -> (LLMState, str)
+    def accumulate(prompt, state) -> LLMState   # no-output context extension
+    def empty_state() -> LLMState               # backend-specific zero state
     def metrics(reset=False) -> (input_tokens, output_tokens, latency_ms)
 ```
 
-| Backend       | KV State | Metrics | Purpose |
-|---------------|----------|---------|---------|
-| `DummyLLM`    | passthrough | approx. input tokens only | Pipeline testing, preliminary token-count experiments |
-| `AnthropicLLM`| ignored (server-side caching) | full | API-based baseline |
-| `LlamaLLM`    | full support (planned) | full | Primary experiment target |
+| Backend       | State type | Accumulate API call? | Purpose |
+|---------------|------------|----------------------|---------|
+| `DummyLLM`    | `LLMState` (passthrough) | yes (max_tokens=1, cheap) | Pipeline testing, token-count experiments |
+| `AnthropicLLM`| `AnthropicCachedState` (content blocks) | no | API-based caching experiments |
+| `LlamaLLM`    | `LlamaKVState` (KV tensors, planned) | yes (real prefill) | Primary experiment target |
+
+### LLM State Hierarchy
+
+```
+LLMState                    — base / empty state (DummyLLM, naive builds)
+├── AnthropicCachedState    — ordered list of ContentBlock; re-sent with
+│                             cache_control on the last block each call
+└── LlamaKVState            — serialised KV-cache tensors (stub)
+```
+
+### How Anthropic Caching Works
+
+`AnthropicLLM` with `BUILD_MODE=cached`:
+
+1. `accumulate()` appends each context file as a `ContentBlock` — no API call.
+2. The final `generate()` sends all blocks as structured message content with `cache_control: {"type": "ephemeral"}` on the **last** context block.
+3. Anthropic caches the full prefix up to that checkpoint server-side for 5 minutes.
+4. Workers sharing the same context file set retrieve the same `AnthropicCachedState` from the local cache and send byte-identical content — Anthropic's server-side prefix cache fires.
+5. `/metrics` reports `total_cache_read_tokens` and `total_cache_creation_tokens` from Anthropic's usage response.
+
+`BUILD_MODE=naive` with `AnthropicLLM` also works: the empty state means no content blocks are accumulated, so `generate()` sends a single full-prompt block with no `cache_control` marker (no caching benefit, but correct output).
 
 ---
 
@@ -136,7 +161,7 @@ See [ProjectTimeline.md](ProjectTimeline.md) for the full phase plan.
 | Strategy \ Workers         | 1 | 3 | 5+ |
 |----------------------------|---|---|----|
 | Naive (no caching)         |   |   |    |
-| Centralized KV Cache       |   |   |    |
+| Centralized LLM State Cache|   |   |    |
 | Smart caching order        |   |   |    |
 | Distributed cache          |   |   |    |
 
@@ -155,9 +180,9 @@ Metrics collected per cell: total tokens computed, cache hit rate, mean task lat
 | Naive  | 50    | 34,364               | N/A            |
 | Cached | 50    | 27,508               | ~38%           |
 
-Cached mode sent **~20% fewer tokens** than naive. Savings come from context files shared across tasks (`utils/validators.py`, `db/connection.py`, `models/user.py`) being processed once and reused from the KV cache.
+Cached mode sent **~20% fewer tokens** than naive. Savings come from context files shared across tasks (`utils/validators.py`, `db/connection.py`, `models/user.py`) being processed once and reused from the cache.
 
-### Phase 2: Centralized KV Cache — DummyLLM validation
+### Phase 2: Centralized LLM State Cache — DummyLLM validation
 
 | Workers | Cache Entries Written | Cache Hit Rate | Notes |
 |---------|-----------------------|----------------|-------|
@@ -176,7 +201,7 @@ Cached mode sent **~20% fewer tokens** than naive. Savings come from context fil
 | Strategy \ Workers         | 1 | 3 | 5+ |
 |----------------------------|---|---|----|
 | Naive (no caching)         |   |   |    |
-| Centralized KV Cache       |   |   |    |
+| Centralized LLM State Cache|   |   |    |
 
 Metrics per cell: total tokens computed / cache hit rate / mean task latency (s).
 
@@ -195,8 +220,8 @@ Metrics per cell: total tokens computed / cache hit rate / mean task latency (s)
 ```
 ├── src/                    # Worker source code
 │   ├── main.py             # Entry point: SQS polling loop + HTTP server
-│   ├── models.py           # Pydantic models (SQSMessage, KVState, etc.)
-│   ├── message_builder.py  # Naive and cached prompt-build implementations
+│   ├── models.py           # LLMState hierarchy, SQSMessage, domain models
+│   ├── message_builder.py  # build_naive() and build_cached()
 │   ├── git_client.py       # git CLI wrapper (fetch, commit, push)
 │   ├── sqs_client.py       # boto3 SQS wrapper
 │   ├── kv_cache.py         # KVCacheInterface + InMemoryKVCache (LRU)
@@ -204,8 +229,8 @@ Metrics per cell: total tokens computed / cache hit rate / mean task latency (s)
 │   ├── Dockerfile
 │   └── llm/
 │       ├── interface.py    # InterfaceLLM abstract base + file tag constants
+│       ├── anthropic_llm.py # AnthropicLLM with cache_control checkpoints
 │       ├── dummy_llm.py    # DummyLLM
-│       ├── anthropic_llm.py
 │       └── llama_llm.py    # Stub — not yet implemented
 ├── test_script/
 │   └── test_runner.py      # Seeds SQS, creates test branch, times drain
@@ -226,13 +251,13 @@ Metrics per cell: total tokens computed / cache hit rate / mean task latency (s)
 
 All runtime behaviour is controlled via environment variables (set in `terraform/variables.tf`):
 
-| Variable          | Default                      | Description |
-|-------------------|------------------------------|-------------|
-| `LLM_BACKEND`     | `dummy`                      | `dummy`, `anthropic`, or `llama` |
-| `LLM_MODEL`       | `claude-haiku-4-5-20251001`  | Model ID (Anthropic only) |
-| `ANTHROPIC_API_KEY` | —                          | Required when `LLM_BACKEND=anthropic` |
-| `GITHUB_TOKEN`    | —                            | GitHub PAT with repo read/write |
-| `SQS_QUEUE_URL`   | —                            | Injected by Terraform |
-| `BUILD_MODE`      | `naive`                      | `naive` or `cached` |
-| `KV_CACHE_SIZE`   | `100`                        | Max LRU entries per worker |
-| `AWS_REGION`      | `us-east-1`                  | |
+| Variable            | Default                     | Description |
+|---------------------|-----------------------------|-------------|
+| `LLM_BACKEND`       | `dummy`                     | `dummy`, `anthropic`, or `llama` |
+| `LLM_MODEL`         | `claude-haiku-4-5-20251001` | Model ID (Anthropic only) |
+| `ANTHROPIC_API_KEY` | —                           | Required when `LLM_BACKEND=anthropic` |
+| `GITHUB_TOKEN`      | —                           | GitHub PAT with repo read/write |
+| `SQS_QUEUE_URL`     | —                           | Injected by Terraform |
+| `BUILD_MODE`        | `naive`                     | `naive` or `cached` |
+| `KV_CACHE_SIZE`     | `100`                       | Max LRU entries per worker |
+| `AWS_REGION`        | `us-east-1`                 | |

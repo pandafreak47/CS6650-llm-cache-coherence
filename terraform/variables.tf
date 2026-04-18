@@ -104,7 +104,7 @@ variable "github_token" {
 
 variable "build_mode" {
   type        = string
-  description = "Prompt-build strategy: 'naive' (full context string) or 'cached' (incremental KV)."
+  description = "Prompt-build strategy: 'naive' (full context string) or 'cached' (incremental LLM state, uses accumulate())."
   default     = "naive"
   validation {
     condition     = contains(["naive", "cached"], var.build_mode)
