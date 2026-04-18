@@ -6,10 +6,11 @@ Steps
 -----
 1. Clone the target repo and read deps.json to discover tasks.
 2. Create a fresh branch off main in the target repo.
-3. Purge any leftover messages from the SQS queue.
-4. Sample --num-tasks tasks (randomly, with optional --seed), seed the queue.
-5. Poll until the queue is fully drained, timing the entire period.
-6. Print per-task throughput stats.
+3. Reset metrics on all workers (POST /metrics/clear).
+4. Purge any leftover messages from the SQS queue.
+5. Sample --num-tasks tasks (randomly, with optional --seed), seed the queue.
+6. Poll until the queue is fully drained, timing the entire period.
+7. Collect and aggregate metrics from all workers, print results.
 
 Environment variables
 ---------------------
@@ -31,6 +32,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
 
 import boto3
 
@@ -108,6 +111,64 @@ def sample_tasks(pool: list[dict], n: int, seed: int | None) -> list[dict]:
     return selected
 
 # ---------------------------------------------------------------------------
+# Worker metrics
+# ---------------------------------------------------------------------------
+
+def _http(method: str, url: str, timeout: int = 5) -> dict | None:
+    req = urllib.request.Request(url, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except (urllib.error.URLError, OSError) as exc:
+        print(f"  Warning: {method} {url} failed: {exc}")
+        return None
+
+
+def clear_worker_metrics(worker_urls: list[str]) -> None:
+    """POST /metrics/clear on every worker."""
+    for url in worker_urls:
+        result = _http("POST", f"{url}/metrics/clear")
+        if result is not None:
+            print(f"  Cleared metrics on {url}")
+
+
+def collect_worker_metrics(worker_urls: list[str]) -> dict:
+    """
+    GET /metrics from every worker and return aggregated totals.
+
+    Additive fields (tokens, bytes, counts) are summed across workers.
+    Per-worker breakdowns are included under 'workers' for inspection.
+    """
+    _ADDITIVE = [
+        "total_input_tokens",
+        "total_output_tokens",
+        "total_requests",
+        "total_cache_read_tokens",
+        "total_cache_creation_tokens",
+        "cache_bytes_written",
+        "cache_bytes_read",
+        "cache_hit_count",
+        "cache_miss_count",
+        "total_latency_ms",
+    ]
+
+    aggregated: dict = {k: 0 for k in _ADDITIVE}
+    per_worker = []
+
+    for url in worker_urls:
+        m = _http("GET", f"{url}/metrics")
+        if m is None:
+            print(f"  Warning: could not reach {url} — excluded from aggregate.")
+            continue
+        per_worker.append({"url": url, **m})
+        for key in _ADDITIVE:
+            aggregated[key] += m.get(key, 0)
+
+    aggregated["workers"] = per_worker
+    return aggregated
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -161,7 +222,6 @@ def purge_queue(sqs, queue_url: str) -> None:
 def seed_tasks(sqs, queue_url: str, tasks: list[dict]) -> None:
     for task in tasks:
         body_str = json.dumps(task)
-        # Message group ID = sanitised target_file path (gives per-file locking)
         group_id = task["target_file"].replace("/", "_").replace(".", "_")
         dedup_id = hashlib.sha256(
             f"{group_id}:{body_str}:{time.time_ns()}".encode()
@@ -192,7 +252,7 @@ def wait_for_drain(sqs, queue_url: str, poll_interval: float = 5.0) -> float:
         elapsed = time.monotonic() - start
         print(f"  [{elapsed:6.1f}s] visible={visible}  in-flight={in_flight}", end="\r")
         if visible + in_flight == 0:
-            print()  # newline after the carriage-return line
+            print()
             return elapsed
         time.sleep(poll_interval)
 
@@ -209,10 +269,17 @@ def main() -> None:
         help="SQS FIFO queue URL (or set SQS_QUEUE_URL env var)",
     )
     parser.add_argument(
+        "--workers",
+        default=os.environ.get("WORKER_URLS", ""),
+        help="Comma-separated list of worker base URLs for metrics aggregation "
+             "(e.g. http://1.2.3.4:8080,http://5.6.7.8:8080). "
+             "Can also be set via WORKER_URLS env var. Omit to skip metrics collection.",
+    )
+    parser.add_argument(
         "--num-tasks",
         type=int,
         default=50,
-        help="Number of tasks to seed (default: 10)",
+        help="Number of tasks to seed (default: 50)",
     )
     parser.add_argument(
         "--seed",
@@ -245,6 +312,7 @@ def main() -> None:
         print("Error: --queue-url or SQS_QUEUE_URL is required.", file=sys.stderr)
         sys.exit(1)
 
+    worker_urls = [u.strip() for u in args.workers.split(",") if u.strip()]
     github_token = os.environ.get("GITHUB_TOKEN", "")
     sqs = boto3.client("sqs", region_name=args.region)
 
@@ -260,6 +328,11 @@ def main() -> None:
     else:
         print(f"Creating test branch '{branch_id}' from '{args.base_branch}'…")
         create_test_branch(args.repo_url, args.base_branch, branch_id, github_token)
+
+    # --- Reset worker metrics ------------------------------------------------
+    if worker_urls:
+        print(f"Resetting metrics on {len(worker_urls)} worker(s)…")
+        clear_worker_metrics(worker_urls)
 
     # --- Queue setup --------------------------------------------------------
     print("Preparing queue…")
@@ -279,13 +352,47 @@ def main() -> None:
     print("Waiting for queue to drain…")
     elapsed = wait_for_drain(sqs, args.queue_url)
 
-    # --- Results ------------------------------------------------------------
-    print("\n" + "=" * 50)
+    # --- Collect and print results ------------------------------------------
+    print("\n" + "=" * 56)
     print(f"  Tasks         : {args.num_tasks}")
     print(f"  Seed          : {args.seed}")
+    print(f"  Workers       : {len(worker_urls) or '(not provided)'}")
     print(f"  Total time    : {elapsed:.2f} s")
     print(f"  Avg per task  : {elapsed / args.num_tasks:.2f} s")
-    print("=" * 50)
+
+    if worker_urls:
+        print()
+        m = collect_worker_metrics(worker_urls)
+        hits = m["cache_hit_count"]
+        misses = m["cache_miss_count"]
+        hit_rate = hits / (hits + misses) if (hits + misses) > 0 else 0.0
+        print(f"  --- LLM metrics (aggregated) ---")
+        print(f"  Input tokens  : {m['total_input_tokens']:,}")
+        print(f"  Output tokens : {m['total_output_tokens']:,}")
+        print(f"  Requests      : {m['total_requests']}")
+        print(f"  LLM latency   : {m['total_latency_ms'] / 1000:.2f} s total")
+        if m["total_cache_read_tokens"] or m["total_cache_creation_tokens"]:
+            print(f"  --- Anthropic server cache ---")
+            print(f"  Cache read tokens   : {m['total_cache_read_tokens']:,}")
+            print(f"  Cache create tokens : {m['total_cache_creation_tokens']:,}")
+        print(f"  --- Local state cache ---")
+        print(f"  Bytes written : {m['cache_bytes_written']:,}")
+        print(f"  Bytes read    : {m['cache_bytes_read']:,}")
+        print(f"  Hits          : {hits}  Misses: {misses}  Rate: {hit_rate:.1%}")
+
+        if len(m["workers"]) > 1:
+            print(f"\n  --- Per-worker breakdown ---")
+            for w in m["workers"]:
+                w_hits = w.get("cache_hit_count", 0)
+                w_misses = w.get("cache_miss_count", 0)
+                w_rate = w_hits / (w_hits + w_misses) if (w_hits + w_misses) > 0 else 0.0
+                print(f"  {w['url']}")
+                print(f"    input={w.get('total_input_tokens',0):,}  "
+                      f"requests={w.get('total_requests',0)}  "
+                      f"hit_rate={w_rate:.1%}  "
+                      f"bytes_read={w.get('cache_bytes_read',0):,}")
+
+    print("=" * 56)
 
 
 if __name__ == "__main__":
