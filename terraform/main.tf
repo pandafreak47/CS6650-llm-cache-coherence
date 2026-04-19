@@ -9,6 +9,7 @@ module "network" {
   source         = "./modules/network"
   service_name   = var.service_name
   container_port = var.container_port
+  cidr_blocks    = var.allowed_cidr_blocks
 }
 
 module "ecr" {

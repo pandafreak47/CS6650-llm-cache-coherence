@@ -3,6 +3,12 @@ variable "aws_region" {
   default = "us-east-1"
 }
 
+variable "allowed_cidr_blocks" {
+  type        = list(string)
+  description = "CIDRs allowed to reach the worker HTTP port. Add your IP as 'x.x.x.x/32' to restrict access."
+  default     = ["0.0.0.0/0"]
+}
+
 # ---------------------------------------------------------------------------
 # ECR / ECS basics
 # ---------------------------------------------------------------------------
