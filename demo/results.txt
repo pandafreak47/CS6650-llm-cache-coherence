@@ -182,3 +182,38 @@ post git API update:
     input=2,713  requests=9  hit_rate=44.4%  bytes_read=5,950
 ========================================================
 
+
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 5
+  Total time    : 131.08 s
+  Avg per task  : 2.62 s
+
+  --- Config ---
+  LLM backend   : anthropic
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 95,322
+  Output tokens : 39,749
+  Requests      : 89
+  LLM latency   : 773.57 s total
+  --- Local state cache ---
+  Bytes written : 249,979
+  Bytes read    : 63,747
+  Hits          : 29  Misses: 55  Rate: 34.5%
+
+  --- Per-worker breakdown ---
+  http://54.167.178.21:8080
+    input=11,419  requests=18  hit_rate=17.6%  bytes_read=5,401
+  http://100.27.190.174:8080
+    input=16,377  requests=18  hit_rate=23.5%  bytes_read=9,382
+  http://3.91.85.105:8080
+    input=22,134  requests=17  hit_rate=50.0%  bytes_read=17,325
+  http://34.204.197.41:8080
+    input=20,207  requests=18  hit_rate=41.2%  bytes_read=14,968
+  http://98.81.251.11:8080
+    input=25,185  requests=18  hit_rate=41.2%  bytes_read=16,671
+========================================================
