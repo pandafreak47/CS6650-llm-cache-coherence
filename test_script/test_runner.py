@@ -111,6 +111,50 @@ def sample_tasks(pool: list[dict], n: int, seed: int | None) -> list[dict]:
     return selected
 
 # ---------------------------------------------------------------------------
+# ECS worker discovery
+# ---------------------------------------------------------------------------
+
+def discover_worker_urls(cluster: str, service: str, port: int, region: str) -> list[str]:
+    """
+    Resolve the current public IPs of all RUNNING tasks in an ECS service
+    and return them as http://IP:port base URLs.
+    """
+    ecs = boto3.client("ecs", region_name=region)
+    ec2 = boto3.client("ec2", region_name=region)
+
+    task_arns = ecs.list_tasks(cluster=cluster, serviceName=service, desiredStatus="RUNNING") \
+                   .get("taskArns", [])
+    if not task_arns:
+        print(f"  Warning: no running tasks found in {cluster}/{service}.")
+        return []
+
+    tasks = ecs.describe_tasks(cluster=cluster, tasks=task_arns).get("tasks", [])
+
+    eni_ids = []
+    for task in tasks:
+        for attachment in task.get("attachments", []):
+            for detail in attachment.get("details", []):
+                if detail["name"] == "networkInterfaceId":
+                    eni_ids.append(detail["value"])
+
+    if not eni_ids:
+        print("  Warning: no network interfaces found on running tasks.")
+        return []
+
+    interfaces = ec2.describe_network_interfaces(NetworkInterfaceIds=eni_ids) \
+                    .get("NetworkInterfaces", [])
+
+    urls = []
+    for iface in interfaces:
+        ip = iface.get("Association", {}).get("PublicIp")
+        if ip:
+            urls.append(f"http://{ip}:{port}")
+
+    print(f"  Discovered {len(urls)} worker(s): {', '.join(urls)}")
+    return urls
+
+
+# ---------------------------------------------------------------------------
 # Worker metrics
 # ---------------------------------------------------------------------------
 
@@ -271,9 +315,25 @@ def main() -> None:
     parser.add_argument(
         "--workers",
         default=os.environ.get("WORKER_URLS", ""),
-        help="Comma-separated list of worker base URLs for metrics aggregation "
-             "(e.g. http://1.2.3.4:8080,http://5.6.7.8:8080). "
-             "Can also be set via WORKER_URLS env var. Omit to skip metrics collection.",
+        help="Comma-separated worker base URLs (e.g. http://1.2.3.4:8080). "
+             "Also via WORKER_URLS env var. If omitted, discovered from ECS "
+             "using --cluster/--service.",
+    )
+    parser.add_argument(
+        "--cluster",
+        default=os.environ.get("ECS_CLUSTER", "llm-agent-worker-cluster"),
+        help="ECS cluster name for automatic worker discovery (default: llm-agent-worker-cluster).",
+    )
+    parser.add_argument(
+        "--service",
+        default=os.environ.get("ECS_SERVICE", "llm-agent-worker"),
+        help="ECS service name for automatic worker discovery (default: llm-agent-worker).",
+    )
+    parser.add_argument(
+        "--worker-port",
+        type=int,
+        default=int(os.environ.get("WORKER_PORT", "8080")),
+        help="HTTP port the workers listen on (default: 8080).",
     )
     parser.add_argument(
         "--num-tasks",
@@ -312,9 +372,16 @@ def main() -> None:
         print("Error: --queue-url or SQS_QUEUE_URL is required.", file=sys.stderr)
         sys.exit(1)
 
-    worker_urls = [u.strip() for u in args.workers.split(",") if u.strip()]
     github_token = os.environ.get("GITHUB_TOKEN", "")
     sqs = boto3.client("sqs", region_name=args.region)
+
+    # Resolve worker URLs — explicit list takes priority, then ECS discovery.
+    worker_urls = [u.strip() for u in args.workers.split(",") if u.strip()]
+    if not worker_urls:
+        print(f"Discovering workers from ECS ({args.cluster}/{args.service})…")
+        worker_urls = discover_worker_urls(
+            args.cluster, args.service, args.worker_port, args.region
+        )
 
     # --- Load task pool from repo -------------------------------------------
     print(f"Loading task pool from {args.repo_url} ({args.base_branch})…")
