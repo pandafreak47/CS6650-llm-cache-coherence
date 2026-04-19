@@ -135,7 +135,7 @@ class InterfaceLLM:
 
 **Model:** [TinyLlama-1.1B-Chat-v1.0 Q4_K_M](https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF) — a 1.1B parameter model quantized to ~4 bits per weight. GGUF file is ~670 MB. Chosen because it runs entirely on CPU with no GPU dependency, which keeps the Fargate setup simple while still exercising real attention prefill computation. Output quality is low; that is intentional — the experiment measures token counts and latency, not answer correctness.
 
-**Memory:** ~950 MB for model weights + ~150 MB KV cache (2048-token context) + ~150 MB Python/uvicorn overhead ≈ **~1.25 GB resident**. The default Fargate allocation for `LLM_BACKEND=dummy/anthropic` is 0.5 vCPU / 1 GB, which would OOM. Terraform automatically switches to **2 vCPU / 4 GB** when `llm_backend = "llama"` is set in `terraform.tfvars`.
+**Memory:** ~950 MB for model weights + ~300 MB KV cache (4096-token context) + ~150 MB Python/uvicorn overhead ≈ **~1.25 GB resident**. The default Fargate allocation for `LLM_BACKEND=dummy/anthropic` is 0.5 vCPU / 1 GB, which would OOM. Terraform automatically switches to **2 vCPU / 4 GB** when `llm_backend = "llama"` is set in `terraform.tfvars`.
 
 **Download:** The model is not baked into the Docker image. Each worker downloads it from HuggingFace on first boot (configurable via `LLAMA_MODEL_URL`), saves it to `/tmp/model.gguf`, and reports download progress in `/health` until ready.
 
