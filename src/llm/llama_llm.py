@@ -23,7 +23,7 @@ class LlamaLLM(InterfaceLLM):
         self,
         model_path: str,
         end_sequence: str = DEFAULT_END_SEQUENCE,
-        n_ctx: int = 2048,
+        n_ctx: int = 4096,
     ):
         self._end_sequence = end_sequence
         self._model = Llama(
