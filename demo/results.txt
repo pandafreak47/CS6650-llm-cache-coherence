@@ -1,3 +1,4 @@
+Phase 1:
 ========================================================
   Tasks         : 50
   Seed          : None
@@ -38,6 +39,59 @@
   Bytes written : 90,044
   Bytes read    : 38,274
   Hits          : 17  Misses: 33  Rate: 34.0%
+========================================================
+
+Phase 2:
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 1
+  Total time    : 80.68 s
+  Avg per task  : 1.61 s
+
+  --- Config ---
+  LLM backend   : dummy
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 17,101
+  Output tokens : 14,482
+  Requests      : 50
+  LLM latency   : 0.00 s total
+  --- Local state cache ---
+  Bytes written : 108,022
+  Bytes read    : 27,586
+  Hits          : 14  Misses: 36  Rate: 28.0%
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 3
+  Total time    : 65.75 s
+  Avg per task  : 1.32 s
+
+  --- Config ---
+  LLM backend   : dummy
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 17,658
+  Output tokens : 14,994
+  Requests      : 51
+  LLM latency   : 0.00 s total
+  --- Local state cache ---
+  Bytes written : 125,985
+  Bytes read    : 33,745
+  Hits          : 21  Misses: 30  Rate: 41.2%
+
+  --- Per-worker breakdown ---
+  http://54.210.191.45:8080
+    input=5,227  requests=16  hit_rate=50.0%  bytes_read=14,105
+  http://98.81.191.70:8080
+    input=5,091  requests=12  hit_rate=25.0%  bytes_read=4,782
+  http://98.92.160.240:8080
+    input=7,340  requests=23  hit_rate=43.5%  bytes_read=14,858
 ========================================================
 
 
