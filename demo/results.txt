@@ -185,6 +185,58 @@ post git API update:
 ========================================================
   Tasks         : 50
   Seed          : None
+  Workers       : 1
+  Total time    : 203.08 s
+  Avg per task  : 4.06 s
+
+  --- Config ---
+  LLM backend   : anthropic
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 57,597
+  Output tokens : 22,378
+  Requests      : 50
+  LLM latency   : 109.87 s total
+  --- Local state cache ---
+  Bytes written : 137,124
+  Bytes read    : 57,827
+  Hits          : 21  Misses: 29  Rate: 42.0%
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 3
+  Total time    : 100.88 s
+  Avg per task  : 2.02 s
+
+  --- Config ---
+  LLM backend   : anthropic
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 58,731
+  Output tokens : 24,920
+  Requests      : 50
+  LLM latency   : 178.08 s total
+  --- Local state cache ---
+  Bytes written : 182,898
+  Bytes read    : 34,580
+  Hits          : 14  Misses: 36  Rate: 28.0%
+
+  --- Per-worker breakdown ---
+  http://18.212.140.117:8080
+    input=21,536  requests=17  latency=58.54s  hit_rate=17.6%  bytes_read=10,662
+  http://100.25.146.177:8080
+    input=18,439  requests=18  latency=56.04s  hit_rate=38.9%  bytes_read=12,645
+  http://13.221.105.124:8080
+    input=18,756  requests=15  latency=63.50s  hit_rate=26.7%  bytes_read=11,273
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
   Workers       : 5
   Total time    : 131.08 s
   Avg per task  : 2.62 s
@@ -301,3 +353,7 @@ post git API update:
   http://3.237.40.182:8080
     input=2,751  requests=10  latency=15.00s  hit_rate=20.0%  bytes_read=3,413
 ========================================================
+
+Next Steps:
+    - run final anthropic benchmark (1)
+    - Impliment llama.cpp
