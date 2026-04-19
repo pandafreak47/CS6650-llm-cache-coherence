@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import os
 import random
@@ -7,6 +9,8 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from .models import GitRepo
@@ -94,37 +98,67 @@ class GitClient:
             pass
         return 0
 
-    def commit_file(self, file_path: str, content: str, commit_message: str) -> None:
-        """Write content, stage, commit, and push. Serialized per worker instance.
+    def _github_api(self, method: str, path: str, body: dict | None = None) -> dict:
+        """Make a GitHub REST API call. Returns parsed JSON response."""
+        url = f"https://api.github.com{path}"
+        data = json.dumps(body).encode() if body else None
+        req = urllib.request.Request(
+            url,
+            data=data,
+            method=method,
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Accept": "application/vnd.github.v3+json",
+                "Content-Type": "application/json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read())
 
-        Retries push up to _MAX_PUSH_ATTEMPTS times with a rebase pull on rejection.
-        FIFO message groups guarantee no two workers edit the same file, so rebases
-        are always conflict-free. Random jitter prevents thundering-herd retries.
+    def commit_file(self, file_path: str, content: str, commit_message: str) -> None:
+        """Commit a file via the GitHub Contents API (compare-and-swap on SHA).
+
+        Bypasses git push entirely — the API handles concurrent writers atomically
+        so there is no branch-level livelock regardless of worker count.
         """
-        _MAX_PUSH_ATTEMPTS = 15
-        workdir = self._ensure_cloned()
-        with self._commit_lock:
-            self._run(["git", "pull", "--rebase"], cwd=workdir)
-            target = workdir / file_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
-            self._run(["git", "add", file_path], cwd=workdir)
-            self._run(["git", "commit", "--allow-empty", "-m", commit_message], cwd=workdir)
-            for attempt in range(_MAX_PUSH_ATTEMPTS):
-                try:
-                    self._run(["git", "push"], cwd=workdir)
-                    return
-                except subprocess.CalledProcessError as exc:
-                    if attempt == _MAX_PUSH_ATTEMPTS - 1:
-                        raise
+        # Parse owner/repo from URL: https://github.com/{owner}/{repo}
+        parts = self._repo.url.rstrip("/").split("/")
+        owner, repo = parts[-2], parts[-1]
+        if repo.endswith(".git"):
+            repo = repo[:-4]
+
+        api_path = f"/repos/{owner}/{repo}/contents/{file_path}"
+        encoded = base64.b64encode(content.encode()).decode()
+
+        for attempt in range(20):
+            # Fetch current SHA (needed for updates; omit for new files)
+            sha: str | None = None
+            try:
+                info = self._github_api("GET", f"{api_path}?ref={self._repo.branch}")
+                sha = info["sha"]
+            except urllib.error.HTTPError as e:
+                if e.code != 404:
+                    raise
+
+            body: dict = {
+                "message": commit_message,
+                "content": encoded,
+                "branch": self._repo.branch,
+            }
+            if sha:
+                body["sha"] = sha
+
+            try:
+                self._github_api("PUT", api_path, body)
+                return
+            except urllib.error.HTTPError as e:
+                if e.code == 409 and attempt < 19:
+                    # SHA mismatch — another worker committed; retry with fresh SHA
                     logger.warning(
-                        "git push rejected (attempt %d/%d) for %s: %s",
-                        attempt + 1, _MAX_PUSH_ATTEMPTS, file_path,
-                        exc.stderr.strip() if exc.stderr else "(no stderr)",
+                        "GitHub API conflict (attempt %d/20) for %s — retrying",
+                        attempt + 1, file_path,
                     )
-                    time.sleep(random.uniform(0.05, 0.3))
-                    try:
-                        self._run(["git", "pull", "--rebase"], cwd=workdir)
-                    except subprocess.CalledProcessError as rebase_exc:
-                        logger.error("git pull --rebase failed: %s", rebase_exc.stderr)
-                        raise
+                    time.sleep(random.uniform(0.05, 0.2))
+                    continue
+                raise
