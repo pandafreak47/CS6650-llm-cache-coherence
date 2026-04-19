@@ -182,8 +182,6 @@ post git API update:
     input=2,713  requests=9  hit_rate=44.4%  bytes_read=5,950
 ========================================================
 
-
-
 ========================================================
   Tasks         : 50
   Seed          : None
@@ -216,4 +214,90 @@ post git API update:
     input=20,207  requests=18  hit_rate=41.2%  bytes_read=14,968
   http://98.81.251.11:8080
     input=25,185  requests=18  hit_rate=41.2%  bytes_read=16,671
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 1
+  Total time    : 166.70 s
+  Avg per task  : 3.33 s
+
+  --- Config ---
+  LLM backend   : dummy
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 17,072
+  Output tokens : 14,457
+  Requests      : 50
+  LLM latency   : 75.01 s total
+  --- Local state cache ---
+  Bytes written : 125,478
+  Bytes read    : 29,560
+  Hits          : 16  Misses: 34  Rate: 32.0%
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 3
+  Total time    : 65.57 s
+  Avg per task  : 1.31 s
+
+  --- Config ---
+  LLM backend   : dummy
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 17,344
+  Output tokens : 14,729
+  Requests      : 50
+  LLM latency   : 75.01 s total
+  --- Local state cache ---
+  Bytes written : 102,226
+  Bytes read    : 37,978
+  Hits          : 23  Misses: 27  Rate: 46.0%
+
+  --- Per-worker breakdown ---
+  http://54.164.146.99:8080
+    input=5,438  requests=15  latency=22.50s  hit_rate=40.0%  bytes_read=10,925
+  http://35.153.16.231:8080
+    input=7,061  requests=21  latency=31.50s  hit_rate=57.1%  bytes_read=20,333
+  http://3.237.40.182:8080
+    input=4,845  requests=14  latency=21.00s  hit_rate=35.7%  bytes_read=6,720
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 5
+  Total time    : 40.39 s
+  Avg per task  : 0.81 s
+
+  --- Config ---
+  LLM backend   : dummy
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 17,047
+  Output tokens : 14,440
+  Requests      : 50
+  LLM latency   : 75.01 s total
+  --- Local state cache ---
+  Bytes written : 91,066
+  Bytes read    : 44,358
+  Hits          : 22  Misses: 28  Rate: 44.0%
+
+  --- Per-worker breakdown ---
+  http://3.237.60.35:8080
+    input=2,364  requests=8  latency=12.00s  hit_rate=50.0%  bytes_read=10,891
+  http://54.164.146.99:8080
+    input=3,263  requests=9  latency=13.50s  hit_rate=55.6%  bytes_read=11,821
+  http://18.212.222.19:8080
+    input=4,139  requests=11  latency=16.50s  hit_rate=36.4%  bytes_read=7,896
+  http://35.153.16.231:8080
+    input=4,530  requests=12  latency=18.00s  hit_rate=58.3%  bytes_read=10,337
+  http://3.237.40.182:8080
+    input=2,751  requests=10  latency=15.00s  hit_rate=20.0%  bytes_read=3,413
 ========================================================
