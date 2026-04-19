@@ -50,7 +50,7 @@ Cached mode sent **53% fewer input tokens** than naive. 17 of 50 tasks hit a cac
 
 **Exit criteria:** With 3+ pods running, cache keys written by one pod are successfully read by another. Validated via logs and `/metrics` hit-rate reporting.
 
----
+<!-- ---
 
 ## Phase 3 — Crash Recovery
 
@@ -70,7 +70,7 @@ Cached mode sent **53% fewer input tokens** than naive. 17 of 50 tasks hit a cac
 | Crash after LLM, before commit | | | |
 | Crash after commit, before ack | | | Duplicate commit risk |
 
-**Exit criteria:** All three scenarios documented with observed behaviour. Duplicate-commit risk identified and noted.
+**Exit criteria:** All three scenarios documented with observed behaviour. Duplicate-commit risk identified and noted. -->
 
 ---
 
@@ -78,11 +78,15 @@ Cached mode sent **53% fewer input tokens** than naive. 17 of 50 tasks hit a cac
 
 **Goal:** Replace DummyLLM with llama.cpp. The centralized cache and crash recovery are already in place — this phase swaps in the real backend and runs the full experiment matrix. Memory pressure per pod is bounded because KV states live in Redis, not in the worker heap.
 
+**Model:** TinyLlama-1.1B-Chat-v1.0 Q4_K_M (~670 MB GGUF). Runs on CPU — no GPU required. Output quality is intentionally low; the experiment measures token counts and latency, not answer correctness.
+
+**Compute:** TinyLlama needs ~1.25 GB resident memory (weights + KV cache + process overhead). Terraform automatically allocates **2 vCPU / 4 GB** when `llm_backend = "llama"` is set, vs. 0.5 vCPU / 1 GB for other backends. Model is downloaded from HuggingFace at worker boot; `/health` reports download progress until ready.
+
 **Tasks:**
-- Implement `LlamaLLM` with full `KVState` and `metrics()` support
+- ✅ Implement `LlamaLLM` with full `LlamaKVState` and `metrics()` support
+- ✅ Auto-scale Fargate compute tier based on `llm_backend` (Terraform locals)
+- ✅ Download model from HuggingFace on boot with `/health` progress reporting
 - Implement KV state serialization/deserialization to/from Redis
-- Migrate ECS from Fargate to EC2-backed ECS with an appropriate GPU/CPU instance type
-- Update Terraform for new compute type
 - Run the full matrix: naive vs. centralized cache, across 1 / 3 / 5+ pods
 
 **Experiment:** Full matrix, llama.cpp, real token computation

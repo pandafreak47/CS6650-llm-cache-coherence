@@ -65,13 +65,18 @@ variable "sqs_visibility_timeout" {
 
 variable "llm_backend" {
   type        = string
-  description = "LLM backend: 'anthropic' or 'dummy'"
+  description = "LLM backend: 'anthropic', 'dummy', or 'llama'"
   default     = "dummy"
   validation {
-    condition     = contains(["anthropic", "dummy"], var.llm_backend)
-    error_message = "llm_backend must be 'anthropic' or 'dummy'."
-    # Add 'llama' here when llama.cpp support is implemented.
+    condition     = contains(["anthropic", "dummy", "llama"], var.llm_backend)
+    error_message = "llm_backend must be 'anthropic', 'dummy', or 'llama'."
   }
+}
+
+variable "llama_model_url" {
+  type        = string
+  description = "HTTPS URL to download the GGUF model if not already at llama_model_path. Defaults to TinyLlama 1.1B Q4_K_M from HuggingFace."
+  default     = "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 }
 
 variable "anthropic_api_key" {

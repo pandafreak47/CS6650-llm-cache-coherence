@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import urllib.request
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -42,6 +43,22 @@ _llm: InterfaceLLM
 _cache: KVCacheInterface
 _status: WorkerStatusEnum = WorkerStatusEnum.STANDBY
 _total_requests: int = 0
+_llm_ready = threading.Event()
+_init_detail: str = ""
+
+def _download_with_progress(url: str, dest: str) -> None:
+    global _init_detail
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+
+    def _reporthook(block: int, block_size: int, total: int) -> None:
+        if total > 0:
+            mb_done = block * block_size / 1_048_576
+            mb_total = total / 1_048_576
+            global _init_detail
+            _init_detail = f"downloading model ({mb_done:.0f} MB / {mb_total:.0f} MB)"
+
+    urllib.request.urlretrieve(url, dest, reporthook=_reporthook)
+
 
 _BUILD_MODE = os.environ.get("BUILD_MODE", "naive").lower()      # "naive" | "cached"
 _KV_CACHE_SIZE = int(os.environ.get("KV_CACHE_SIZE", "100"))
@@ -53,6 +70,7 @@ _CACHE_BACKEND = os.environ.get("CACHE_BACKEND", "memory").lower()  # "memory" |
 
 def _worker_loop() -> None:
     global _status, _total_requests
+    _llm_ready.wait()
 
     queue_url = os.environ["SQS_QUEUE_URL"]
     sqs = SQSClient(queue_url=queue_url)
@@ -106,14 +124,39 @@ async def _lifespan(app: FastAPI):
     model = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
     if backend == "anthropic":
         _llm = AnthropicLLM(model=model)
+        _llm_ready.set()
     elif backend == "dummy":
         _llm = DummyLLM()
-    # elif backend == "llama":
-    #     from .llm.llama_llm import LlamaLLM
-    #     _llm = LlamaLLM(model_path=os.environ["LLAMA_MODEL_PATH"])
+        _llm_ready.set()
+    elif backend == "llama":
+        model_path = os.environ.get("LLAMA_MODEL_PATH", "/tmp/model.gguf")
+        model_url = os.getenv(
+            "LLAMA_MODEL_URL",
+            "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
+            "/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+        )
+
+        def _init_llama() -> None:
+            global _llm, _init_detail
+            if not os.path.exists(model_path) and model_url:
+                _init_detail = "downloading model…"
+                logger.info("Downloading llama model from %s → %s", model_url, model_path)
+                _download_with_progress(model_url, model_path)
+                logger.info("Download complete")
+            _init_detail = "loading model into memory"
+            logger.info("Loading llama model: %s", model_path)
+            from .llm.llama_llm import LlamaLLM
+            _llm = LlamaLLM(model_path=model_path)
+            _init_detail = ""
+            logger.info("LLM backend ready: LlamaLLM")
+            _llm_ready.set()
+
+        threading.Thread(target=_init_llama, daemon=True, name="llama-init").start()
     else:
-        raise ValueError(f"Unknown LLM_BACKEND={backend!r}. Valid options: 'anthropic', 'dummy'")
-    logger.info("LLM backend ready: %s", type(_llm).__name__)
+        raise ValueError(f"Unknown LLM_BACKEND={backend!r}. Valid options: 'anthropic', 'dummy', 'llama'")
+
+    if _llm_ready.is_set():
+        logger.info("LLM backend ready: %s", type(_llm).__name__)
 
     if _CACHE_BACKEND == "redis":
         _cache = RedisKVCache(redis_url=os.environ["REDIS_URL"])
@@ -133,6 +176,8 @@ app = FastAPI(title="CS6650 LLM Agent Worker", lifespan=_lifespan)
 
 @app.get("/health", response_model=HealthResponse)
 def health():
+    if not _llm_ready.is_set():
+        return HealthResponse(status="initializing", detail=_init_detail)
     return HealthResponse()
 
 

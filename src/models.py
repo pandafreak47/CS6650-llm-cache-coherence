@@ -52,14 +52,12 @@ class AnthropicCachedState(LLMState):
 
 
 class LlamaKVState(LLMState):
-    """
-    State for the llama.cpp backend (not yet implemented).
+    """State for the llama.cpp backend. Carries the accumulated prompt text."""
+    prompt: str = ""
+    token_count: int = 0
 
-    Will hold serialised KV-cache tensors once LlamaLLM is written.
-    """
-    # future fields:
-    #   tensors: list[bytes] = []
-    #   seq_len: int = 0
+    def byte_size(self) -> int:
+        return len(self.prompt.encode())
 
 
 # Transitional alias — keeps old imports working while the rename propagates.
@@ -91,6 +89,7 @@ class WorkerStatusEnum(str, Enum):
 
 class HealthResponse(BaseModel):
     status: str = "ok"
+    detail: str = ""
 
 
 class StatusResponse(BaseModel):

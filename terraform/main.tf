@@ -1,3 +1,10 @@
+locals {
+  # TinyLlama 1.1B Q4_K_M needs ~1.2 GB resident + OS overhead — 2 vCPU / 4 GB
+  # is the minimum comfortable Fargate pair. All other backends are lightweight.
+  task_cpu    = var.llm_backend == "llama" ? "2048" : "512"
+  task_memory = var.llm_backend == "llama" ? "4096" : "1024"
+}
+
 module "network" {
   source         = "./modules/network"
   service_name   = var.service_name
@@ -48,6 +55,9 @@ module "ecs" {
   log_group_name     = module.logging.log_group_name
   region             = var.aws_region
 
+  cpu    = local.task_cpu
+  memory = local.task_memory
+
   worker_min_count      = var.worker_min_count
   worker_max_count      = var.worker_max_count
   scale_out_queue_depth = var.scale_out_queue_depth
@@ -67,6 +77,7 @@ module "ecs" {
     { name = "DUMMY_LLM_LATENCY", value = tostring(var.dummy_llm_latency) },
     { name = "CACHE_BACKEND",     value = var.cache_backend },
     { name = "REDIS_URL",         value = var.cache_backend == "redis" ? module.redis[0].redis_url : "" },
+    { name = "LLAMA_MODEL_URL",   value = var.llama_model_url },
   ]
 }
 
