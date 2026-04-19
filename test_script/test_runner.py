@@ -433,6 +433,11 @@ def main() -> None:
         hits = m["cache_hit_count"]
         misses = m["cache_miss_count"]
         hit_rate = hits / (hits + misses) if (hits + misses) > 0 else 0.0
+        # Show config from first responsive worker (all workers share the same env)
+        first = m["workers"][0] if m["workers"] else {}
+        print(f"  --- Config ---")
+        print(f"  LLM backend   : {first.get('llm_backend', '?')}")
+        print(f"  Build mode    : {first.get('build_mode', '?')}")
         print(f"  --- LLM metrics (aggregated) ---")
         print(f"  Input tokens  : {m['total_input_tokens']:,}")
         print(f"  Output tokens : {m['total_output_tokens']:,}")
