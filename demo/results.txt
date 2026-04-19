@@ -1,0 +1,44 @@
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 1
+  Total time    : 80.72 s
+  Avg per task  : 1.61 s
+
+  --- Config ---
+  LLM backend   : dummy
+  Build mode    : niave
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 37,180
+  Output tokens : 14,437
+  Requests      : 50
+  LLM latency   : 0.00 s total
+  --- Local state cache ---
+  Bytes written : 0
+  Bytes read    : 0
+  Hits          : 0  Misses: 0  Rate: 0.0%
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 1
+  Total time    : 95.86 s
+  Avg per task  : 1.92 s
+
+  --- Config ---
+  LLM backend   : dummy
+  Build mode    : cached
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 17,382
+  Output tokens : 14,776
+  Requests      : 50
+  LLM latency   : 0.00 s total
+  --- Local state cache ---
+  Bytes written : 90,044
+  Bytes read    : 38,274
+  Hits          : 17  Misses: 33  Rate: 34.0%
+========================================================
+
+
+
