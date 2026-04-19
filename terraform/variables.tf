@@ -118,6 +118,12 @@ variable "kv_cache_size" {
   default     = 100
 }
 
+variable "dummy_llm_latency" {
+  type        = number
+  description = "Simulated LLM latency in seconds for DummyLLM. 0 = no sleep."
+  default     = 0
+}
+
 # ---------------------------------------------------------------------------
 # Cache backend
 # ---------------------------------------------------------------------------

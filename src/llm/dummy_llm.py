@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import os
 import re
+import time
 from typing import Optional
+
+# Seconds to sleep per generate() call. Simulates real LLM latency.
+# Set DUMMY_LLM_LATENCY=1.5 to mimic a ~1.5 s inference time.
+_LATENCY_S = float(os.environ.get("DUMMY_LLM_LATENCY", "0"))
 
 from .interface import InterfaceLLM, DEFAULT_END_SEQUENCE
 from ..models import LLMState, AnthropicCachedState, ContentBlock
@@ -48,11 +54,16 @@ class DummyLLM(InterfaceLLM):
         max_tokens: int = 1024,
         system: Optional[str] = None,
     ) -> tuple[LLMState, str]:
+        t0 = time.monotonic()
+        if _LATENCY_S > 0:
+            time.sleep(_LATENCY_S)
+
         self._total_input_tokens += len(prompt) // 4
 
         matches = _FILE_BLOCK.findall(prompt)
         output = (matches[-1].strip() + "\n# modified by cs6650-agent") if matches else ""
         self._total_output_tokens += len(output) // 4
+        self._total_latency_ms += (time.monotonic() - t0) * 1000
 
         return state, output
 

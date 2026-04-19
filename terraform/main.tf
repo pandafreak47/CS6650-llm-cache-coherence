@@ -64,6 +64,7 @@ module "ecs" {
     { name = "AWS_REGION",        value = var.aws_region },
     { name = "BUILD_MODE",        value = var.build_mode },
     { name = "KV_CACHE_SIZE",     value = tostring(var.kv_cache_size) },
+    { name = "DUMMY_LLM_LATENCY", value = tostring(var.dummy_llm_latency) },
     { name = "CACHE_BACKEND",     value = var.cache_backend },
     { name = "REDIS_URL",         value = var.cache_backend == "redis" ? module.redis[0].redis_url : "" },
   ]
