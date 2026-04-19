@@ -461,9 +461,11 @@ def main() -> None:
                 w_hits = w.get("cache_hit_count", 0)
                 w_misses = w.get("cache_miss_count", 0)
                 w_rate = w_hits / (w_hits + w_misses) if (w_hits + w_misses) > 0 else 0.0
+                w_latency_s = w.get("total_latency_ms", 0) / 1000
                 print(f"  {w['url']}")
                 print(f"    input={w.get('total_input_tokens',0):,}  "
                       f"requests={w.get('total_requests',0)}  "
+                      f"latency={w_latency_s:.2f}s  "
                       f"hit_rate={w_rate:.1%}  "
                       f"bytes_read={w.get('cache_bytes_read',0):,}")
 
