@@ -117,3 +117,23 @@ variable "kv_cache_size" {
   description = "Maximum number of entries in the in-memory KV cache per worker."
   default     = 100
 }
+
+# ---------------------------------------------------------------------------
+# Cache backend
+# ---------------------------------------------------------------------------
+
+variable "cache_backend" {
+  type        = string
+  description = "Cache backend: 'memory' (per-pod in-memory) or 'redis' (shared ElastiCache)."
+  default     = "memory"
+  validation {
+    condition     = contains(["memory", "redis"], var.cache_backend)
+    error_message = "cache_backend must be 'memory' or 'redis'."
+  }
+}
+
+variable "redis_node_type" {
+  type        = string
+  description = "ElastiCache node type for the shared Redis cache."
+  default     = "cache.t3.micro"
+}

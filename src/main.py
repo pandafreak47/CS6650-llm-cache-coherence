@@ -16,7 +16,7 @@ from fastapi import FastAPI
 
 from .commit import commit_changes
 from .git_client import GitClient
-from .kv_cache import InMemoryKVCache, KVCacheInterface
+from .kv_cache import InMemoryKVCache, KVCacheInterface, RedisKVCache
 from .llm import AnthropicLLM, DummyLLM, InterfaceLLM
 from .message_builder import build_naive, build_cached
 from .models import (
@@ -43,8 +43,9 @@ _cache: KVCacheInterface
 _status: WorkerStatusEnum = WorkerStatusEnum.STANDBY
 _total_requests: int = 0
 
-_BUILD_MODE = os.environ.get("BUILD_MODE", "naive").lower()  # "naive" | "cached"
+_BUILD_MODE = os.environ.get("BUILD_MODE", "naive").lower()      # "naive" | "cached"
 _KV_CACHE_SIZE = int(os.environ.get("KV_CACHE_SIZE", "100"))
+_CACHE_BACKEND = os.environ.get("CACHE_BACKEND", "memory").lower()  # "memory" | "redis"
 
 # ---------------------------------------------------------------------------
 # SQS worker loop
@@ -114,7 +115,12 @@ async def _lifespan(app: FastAPI):
         raise ValueError(f"Unknown LLM_BACKEND={backend!r}. Valid options: 'anthropic', 'dummy'")
     logger.info("LLM backend ready: %s", type(_llm).__name__)
 
-    _cache = InMemoryKVCache(capacity=_KV_CACHE_SIZE)
+    if _CACHE_BACKEND == "redis":
+        _cache = RedisKVCache(redis_url=os.environ["REDIS_URL"])
+        logger.info("Cache backend: Redis (%s)", os.environ["REDIS_URL"])
+    else:
+        _cache = InMemoryKVCache(capacity=_KV_CACHE_SIZE)
+        logger.info("Cache backend: in-memory (capacity=%d)", _KV_CACHE_SIZE)
 
     t = threading.Thread(target=_worker_loop, daemon=True, name="sqs-worker")
     t.start()
@@ -142,6 +148,7 @@ def get_metrics():
     return MetricsResponse(
         llm_backend=os.getenv("LLM_BACKEND", "dummy"),
         build_mode=_BUILD_MODE,
+        cache_backend=_CACHE_BACKEND,
         total_input_tokens=in_tok,
         total_output_tokens=out_tok,
         total_latency_ms=latency,

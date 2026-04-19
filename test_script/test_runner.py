@@ -438,6 +438,7 @@ def main() -> None:
         print(f"  --- Config ---")
         print(f"  LLM backend   : {first.get('llm_backend', '?')}")
         print(f"  Build mode    : {first.get('build_mode', '?')}")
+        print(f"  Cache backend : {first.get('cache_backend', '?')}")
         print(f"  --- LLM metrics (aggregated) ---")
         print(f"  Input tokens  : {m['total_input_tokens']:,}")
         print(f"  Output tokens : {m['total_output_tokens']:,}")

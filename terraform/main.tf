@@ -21,6 +21,16 @@ module "sqs" {
   visibility_timeout_seconds = var.sqs_visibility_timeout
 }
 
+module "redis" {
+  source                = "./modules/redis"
+  service_name          = var.service_name
+  subnet_ids            = module.network.subnet_ids
+  vpc_id                = module.network.vpc_id
+  ecs_security_group_id = module.network.security_group_id
+  node_type             = var.redis_node_type
+  count                 = var.cache_backend == "redis" ? 1 : 0
+}
+
 # Reuse the pre-existing lab IAM role for ECS tasks.
 data "aws_iam_role" "lab_role" {
   name = "LabRole"
@@ -54,6 +64,8 @@ module "ecs" {
     { name = "AWS_REGION",        value = var.aws_region },
     { name = "BUILD_MODE",        value = var.build_mode },
     { name = "KV_CACHE_SIZE",     value = tostring(var.kv_cache_size) },
+    { name = "CACHE_BACKEND",     value = var.cache_backend },
+    { name = "REDIS_URL",         value = var.cache_backend == "redis" ? module.redis[0].redis_url : "" },
   ]
 }
 
