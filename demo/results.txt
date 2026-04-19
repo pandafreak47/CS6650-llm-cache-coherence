@@ -354,6 +354,83 @@ post git API update:
     input=2,751  requests=10  latency=15.00s  hit_rate=20.0%  bytes_read=3,413
 ========================================================
 
-Next Steps:
-    - run final anthropic benchmark (1)
-    - Impliment llama.cpp
+Phase 4:
+========================================================
+  Tasks         : 1
+  Seed          : None
+  Workers       : 1
+  Total time    : 131.01 s
+  Avg per task  : 131.01 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 2,063
+  Output tokens : 511
+  Requests      : 1
+  LLM latency   : 122.98 s total
+  --- Local state cache ---
+  Bytes written : 3,766
+  Bytes read    : 0
+  Hits          : 0  Misses: 1  Rate: 0.0%
+========================================================
+
+========================================================
+  Tasks         : 10
+  Seed          : None
+  Workers       : 1
+  Total time    : 1156.66 s
+  Avg per task  : 115.67 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 16,865
+  Output tokens : 4,847
+  Requests      : 10
+  LLM latency   : 1127.01 s total
+  --- Local state cache ---
+  Bytes written : 30,905
+  Bytes read    : 9,318
+  Hits          : 4  Misses: 6  Rate: 40.0%
+========================================================
+
+
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 5
+  Total time    : 1029.82 s
+  Avg per task  : 20.60 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 96,284
+  Output tokens : 22,995
+  Requests      : 50
+  LLM latency   : 4823.97 s total
+  --- Local state cache ---
+  Bytes written : 157,259
+  Bytes read    : 55,610
+  Hits          : 15  Misses: 35  Rate: 30.0%
+
+  --- Per-worker breakdown ---
+  http://18.215.180.60:8080
+    input=24,831  requests=8  latency=991.78s  hit_rate=50.0%  bytes_read=17,452
+  http://13.217.136.212:8080
+    input=12,834  requests=6  latency=997.38s  hit_rate=33.3%  bytes_read=8,495
+  http://54.236.240.205:8080
+    input=10,533  requests=10  latency=915.12s  hit_rate=30.0%  bytes_read=13,088
+  http://44.210.69.172:8080
+    input=33,102  requests=17  latency=993.36s  hit_rate=23.5%  bytes_read=10,235
+  http://54.90.41.69:8080
+    input=14,984  requests=9  latency=926.33s  hit_rate=22.2%  bytes_read=6,340
+========================================================
