@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
 import os
+import random
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from .models import GitRepo
+
+logger = logging.getLogger(__name__)
 
 
 class GitClient:
@@ -90,13 +95,36 @@ class GitClient:
         return 0
 
     def commit_file(self, file_path: str, content: str, commit_message: str) -> None:
-        """Write content, stage, commit, and push. Serialized per worker instance."""
+        """Write content, stage, commit, and push. Serialized per worker instance.
+
+        Retries push up to _MAX_PUSH_ATTEMPTS times with a rebase pull on rejection.
+        FIFO message groups guarantee no two workers edit the same file, so rebases
+        are always conflict-free. Random jitter prevents thundering-herd retries.
+        """
+        _MAX_PUSH_ATTEMPTS = 15
         workdir = self._ensure_cloned()
         with self._commit_lock:
-            self._run(["git", "pull", "--ff-only"], cwd=workdir)
+            self._run(["git", "pull", "--rebase"], cwd=workdir)
             target = workdir / file_path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
             self._run(["git", "add", file_path], cwd=workdir)
             self._run(["git", "commit", "--allow-empty", "-m", commit_message], cwd=workdir)
-            self._run(["git", "push"], cwd=workdir)
+            for attempt in range(_MAX_PUSH_ATTEMPTS):
+                try:
+                    self._run(["git", "push"], cwd=workdir)
+                    return
+                except subprocess.CalledProcessError as exc:
+                    if attempt == _MAX_PUSH_ATTEMPTS - 1:
+                        raise
+                    logger.warning(
+                        "git push rejected (attempt %d/%d) for %s: %s",
+                        attempt + 1, _MAX_PUSH_ATTEMPTS, file_path,
+                        exc.stderr.strip() if exc.stderr else "(no stderr)",
+                    )
+                    time.sleep(random.uniform(0.05, 0.3))
+                    try:
+                        self._run(["git", "pull", "--rebase"], cwd=workdir)
+                    except subprocess.CalledProcessError as rebase_exc:
+                        logger.error("git pull --rebase failed: %s", rebase_exc.stderr)
+                        raise

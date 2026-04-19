@@ -84,5 +84,10 @@ resource "docker_image" "app" {
 }
 
 resource "docker_registry_image" "app" {
-  name = docker_image.app.name
+  name          = docker_image.app.name
+  keep_remotely = true
+
+  triggers = {
+    src_hash = sha256(join("", [for f in fileset("${path.module}/../src", "**") : filesha256("${path.module}/../src/${f}")]))
+  }
 }
