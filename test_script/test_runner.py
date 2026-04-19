@@ -37,6 +37,8 @@ import urllib.request
 
 import boto3
 
+from _config import AWS_REGION, ECS_CLUSTER, ECS_SERVICE, WORKER_PORT
+
 # ---------------------------------------------------------------------------
 # Defaults — override via env vars or CLI flags
 # ---------------------------------------------------------------------------
@@ -321,19 +323,19 @@ def main() -> None:
     )
     parser.add_argument(
         "--cluster",
-        default=os.environ.get("ECS_CLUSTER", "llm-agent-worker-cluster"),
-        help="ECS cluster name for automatic worker discovery (default: llm-agent-worker-cluster).",
+        default=ECS_CLUSTER,
+        help=f"ECS cluster name for automatic worker discovery (default: {ECS_CLUSTER}).",
     )
     parser.add_argument(
         "--service",
-        default=os.environ.get("ECS_SERVICE", "llm-agent-worker"),
-        help="ECS service name for automatic worker discovery (default: llm-agent-worker).",
+        default=ECS_SERVICE,
+        help=f"ECS service name for automatic worker discovery (default: {ECS_SERVICE}).",
     )
     parser.add_argument(
         "--worker-port",
         type=int,
-        default=int(os.environ.get("WORKER_PORT", "8080")),
-        help="HTTP port the workers listen on (default: 8080).",
+        default=WORKER_PORT,
+        help=f"HTTP port the workers listen on (default: {WORKER_PORT}).",
     )
     parser.add_argument(
         "--num-tasks",
@@ -359,7 +361,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--region",
-        default=os.environ.get("AWS_REGION", "us-east-1"),
+        default=AWS_REGION,
     )
     parser.add_argument(
         "--skip-branch",
