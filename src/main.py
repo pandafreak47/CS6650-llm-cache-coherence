@@ -159,7 +159,7 @@ async def _lifespan(app: FastAPI):
         logger.info("LLM backend ready: %s", type(_llm).__name__)
 
     if _CACHE_BACKEND == "redis":
-        _cache = RedisKVCache(redis_url=os.environ["REDIS_URL"])
+        _cache = RedisKVCache(redis_url=os.environ["REDIS_URL"], capacity=_KV_CACHE_SIZE)
         logger.info("Cache backend: Redis (%s)", os.environ["REDIS_URL"])
     else:
         _cache = InMemoryKVCache(capacity=_KV_CACHE_SIZE)

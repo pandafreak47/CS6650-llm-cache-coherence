@@ -66,11 +66,14 @@ Pods are scaled horizontally via Terraform (ECS autoscaling on SQS queue depth).
 
 ### LLM State Cache
 
-Workers maintain a local LRU in-memory state cache (fixed entry count, evicts least-recently-used). The cache maps a **set** of context file paths to the backend-specific `LLMState` after processing those files. Keys are order-independent — `{a.py, b.py}` and `{b.py, a.py}` are the same cache entry. Lookup finds the largest cached subset of the requested context files, so a partial hit is still useful.
+Workers maintain a state cache keyed by **set** of context file paths. Keys are order-independent — `{a.py, b.py}` and `{b.py, a.py}` resolve to the same entry. Lookup finds the largest cached subset of the requested context files, so a partial hit is still useful.
 
 After each successful commit, the worker invalidates every cache entry whose file set includes the modified file, preventing stale states from being reused on changed content.
 
-The cache is backed by `KVCacheInterface`, making it straightforward to swap in a centralized Redis-backed implementation.
+Two implementations share the `KVCacheInterface`:
+
+- **`InMemoryKVCache`** — LRU `OrderedDict`, per-worker, capped at `KV_CACHE_SIZE` entries.
+- **`RedisKVCache`** — shared across workers via ElastiCache. Entry count is also capped at `KV_CACHE_SIZE` using a Redis sorted set (score = insertion timestamp); the oldest entry is evicted on overflow. Stale-file invalidation cleans the sorted set alongside the primary key index. Redis is configured with `maxmemory-policy = noeviction` so it crashes loudly rather than silently dropping entries mid-experiment.
 
 ### Prompt Format
 
@@ -109,7 +112,7 @@ Final prompt:  [target file] [task]  +  state  →  LLM
 
 For `AnthropicLLM`, accumulation is free — no API call is made. The state holds content blocks that are re-sent with `cache_control` markers on the real generation call, triggering Anthropic's server-side prefix cache.
 
-For `LlamaLLM` (planned), accumulation runs the actual prefill computation and stores real KV tensors.
+For `LlamaLLM`, accumulation runs the actual prefill computation on only the new tokens and stores real KV tensors — see [LlamaLLM](#llamallm--model--compute) below.
 
 ---
 
@@ -129,7 +132,7 @@ class InterfaceLLM:
 |---------------|------------|----------------------|---------|
 | `DummyLLM`    | `LLMState` (passthrough) | yes (max_tokens=1, cheap) | Pipeline testing, token-count experiments |
 | `AnthropicLLM`| `AnthropicCachedState` (content blocks) | no | API-based caching experiments |
-| `LlamaLLM`    | `LlamaKVState` (accumulated prompt text) | yes (real prefill) | Primary experiment target |
+| `LlamaLLM`    | `LlamaKVState` (real KV tensors + prompt) | no (incremental eval only) | Primary experiment target |
 
 #### LlamaLLM — Model & Compute
 
@@ -145,8 +148,20 @@ class InterfaceLLM:
 LLMState                    — base / empty state (DummyLLM, naive builds)
 ├── AnthropicCachedState    — ordered list of ContentBlock; re-sent with
 │                             cache_control on the last block each call
-└── LlamaKVState            — serialised KV-cache tensors (stub)
+└── LlamaKVState            — accumulated prompt text + zlib-compressed,
+                              pickled LlamaState binary (real KV tensors)
 ```
+
+### How LlamaLLM KV Caching Works
+
+`LlamaLLM` with `BUILD_MODE=cached`:
+
+1. `accumulate(file, state)` loads the previously saved `LlamaState` binary via `load_state()`, tokenizes the full extended prompt, and calls `eval()` on **only the new tokens** — tokens already in the KV cache (tracked via `n_tokens`) are skipped entirely.
+2. After each `accumulate()`, `save_state()` captures the full KV tensor state (attention keys and values for all layers) and stores it as a zlib-compressed, pickled blob in `LlamaKVState.llama_state_b64`.
+3. The final `generate()` call loads the saved state before inference. llama-cpp-python's internal prefix matcher detects that `eval_tokens` already covers the context files and skips those tokens in prefill — only the short task prompt runs through attention.
+4. `total_input_tokens` in `/metrics` counts only tokens that actually ran through prefill; `total_cache_read_tokens` counts tokens served from the KV cache.
+
+`BUILD_MODE=naive` with `LlamaLLM`: always passes the full reconstructed prompt with no state loaded — all tokens prefilled every call.
 
 ### How Anthropic Caching Works
 
@@ -232,14 +247,14 @@ Metrics per cell: total tokens computed / cache hit rate / mean task latency (s)
 │   ├── message_builder.py  # build_naive() and build_cached()
 │   ├── git_client.py       # git CLI wrapper (fetch, commit, push)
 │   ├── sqs_client.py       # boto3 SQS wrapper
-│   ├── kv_cache.py         # KVCacheInterface + InMemoryKVCache (LRU)
+│   ├── kv_cache.py         # KVCacheInterface + InMemoryKVCache + RedisKVCache (both LRU)
 │   ├── commit.py           # Parses LLM output and commits to GitHub
 │   ├── Dockerfile
 │   └── llm/
 │       ├── interface.py    # InterfaceLLM abstract base + file tag constants
 │       ├── anthropic_llm.py # AnthropicLLM with cache_control checkpoints
 │       ├── dummy_llm.py    # DummyLLM
-│       └── llama_llm.py    # Stub — not yet implemented
+│       └── llama_llm.py    # LlamaLLM with real KV tensor caching
 ├── test_script/
 │   └── test_runner.py      # Seeds SQS, creates test branch, times drain
 ├── terraform/              # AWS infrastructure (ECS, SQS, ECR, VPC)
@@ -267,5 +282,9 @@ All runtime behaviour is controlled via environment variables (set in `terraform
 | `GITHUB_TOKEN`      | —                           | GitHub PAT with repo read/write |
 | `SQS_QUEUE_URL`     | —                           | Injected by Terraform |
 | `BUILD_MODE`        | `naive`                     | `naive` or `cached` |
-| `KV_CACHE_SIZE`     | `100`                       | Max LRU entries per worker |
+| `KV_CACHE_SIZE`     | `100`                       | Max LRU entries in the state cache (both memory and Redis backends) |
+| `CACHE_BACKEND`     | `memory`                    | `memory` or `redis` |
+| `REDIS_URL`         | —                           | Required when `CACHE_BACKEND=redis` (injected by Terraform) |
+| `LLAMA_MODEL_PATH`  | `/tmp/model.gguf`           | Local path where the GGUF model is saved after download |
+| `LLAMA_MODEL_URL`   | TinyLlama Q4_K_M on HuggingFace | Override to use a different GGUF model |
 | `AWS_REGION`        | `us-east-1`                 | |

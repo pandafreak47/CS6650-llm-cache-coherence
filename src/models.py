@@ -52,12 +52,14 @@ class AnthropicCachedState(LLMState):
 
 
 class LlamaKVState(LLMState):
-    """State for the llama.cpp backend. Carries the accumulated prompt text."""
+    """State for the llama.cpp backend. Carries the accumulated KV cache."""
     prompt: str = ""
     token_count: int = 0
+    llama_state_b64: str = ""  # pickle+base64 of LlamaState; empty until first accumulate
 
     def byte_size(self) -> int:
-        return len(self.prompt.encode())
+        # base64 encodes 3 binary bytes as 4 chars — approximate decoded size
+        return len(self.llama_state_b64) * 3 // 4 if self.llama_state_b64 else len(self.prompt.encode())
 
 
 # Transitional alias — keeps old imports working while the rename propagates.

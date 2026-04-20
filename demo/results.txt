@@ -484,3 +484,33 @@ Phase 4:
   http://54.90.41.69:8080
     input=14,984  requests=9  latency=926.33s  hit_rate=22.2%  bytes_read=6,340
 ========================================================
+
+
+Phase 4 (llama) fixed:
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 1
+  Total time    : 5040.47 s
+  Avg per task  : 100.81 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : naive
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 56,388
+  Output tokens : 24,153
+  Requests      : 50
+  LLM latency   : 4976.88 s total
+  --- Local state cache ---
+  Bytes written : 0
+  Bytes read    : 0
+  Hits          : 0  Misses: 0  Rate: 0.0%
+========================================================
+
+
+
+
+

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -90,6 +91,7 @@ class KVCacheInterface(ABC):
 # ---------------------------------------------------------------------------
 
 _IDX_KEY = "cs6650:idx"
+_LRU_KEY = "cs6650:lru"  # sorted set: score=timestamp, member=cache key
 
 
 def _rkey(key: str) -> str:
@@ -119,9 +121,10 @@ def _deserialize(blob: str) -> LLMState:
 class RedisKVCache(KVCacheInterface):
     """Shared prefix-cache backed by Redis. Cross-pod reads/writes via ElastiCache."""
 
-    def __init__(self, redis_url: str):
+    def __init__(self, redis_url: str, capacity: int = 100):
         import redis as redis_lib  # noqa: PLC0415
         self._r = redis_lib.from_url(redis_url, decode_responses=True)
+        self._capacity = capacity
         self._stats = CacheStats()
 
     def get(self, key: str) -> LLMState | None:
@@ -131,7 +134,15 @@ class RedisKVCache(KVCacheInterface):
     def put(self, key: str, value: LLMState) -> None:
         self._r.set(_rkey(key), _serialize(value))
         self._r.sadd(_IDX_KEY, key)
+        self._r.zadd(_LRU_KEY, {key: time.time()})
         self._stats.bytes_written += value.byte_size()
+        # Evict least-recently-used entries beyond capacity
+        overflow = self._r.zcard(_LRU_KEY) - self._capacity
+        if overflow > 0:
+            evicted = self._r.zpopmin(_LRU_KEY, overflow)
+            for evict_key, _ in evicted:
+                self._r.delete(_rkey(evict_key))
+                self._r.srem(_IDX_KEY, evict_key)
 
     def find_best_prefix(self, file_set: frozenset[str]) -> tuple[frozenset[str], LLMState] | None:
         all_keys = self._r.smembers(_IDX_KEY)
@@ -150,6 +161,7 @@ class RedisKVCache(KVCacheInterface):
             self._stats.miss_count += 1
             return None
         state = _deserialize(blob)
+        self._r.zadd(_LRU_KEY, {best_key: time.time()})  # refresh LRU timestamp on hit
         self._stats.hit_count += 1
         self._stats.bytes_read += state.byte_size()
         return frozenset(best_key.split(_SEP)), state
@@ -160,6 +172,7 @@ class RedisKVCache(KVCacheInterface):
         for k in stale:
             self._r.delete(_rkey(k))
             self._r.srem(_IDX_KEY, k)
+            self._r.zrem(_LRU_KEY, k)
         return len(stale)
 
     def stats(self) -> CacheStats:
