@@ -510,7 +510,69 @@ Phase 4 (llama) fixed:
   Hits          : 0  Misses: 0  Rate: 0.0%
 ========================================================
 
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 3
+  Total time    : 2707.25 s
+  Avg per task  : 54.15 s
 
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : naive
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 83,801
+  Output tokens : 34,929
+  Requests      : 50
+  LLM latency   : 7682.91 s total
+  --- Local state cache ---
+  Bytes written : 0
+  Bytes read    : 0
+  Hits          : 0  Misses: 0  Rate: 0.0%
+
+  --- Per-worker breakdown ---
+  http://54.237.115.58:8080
+    input=24,451  requests=14  latency=2514.31s  hit_rate=0.0%  bytes_read=0
+  http://34.230.40.38:8080
+    input=30,622  requests=19  latency=2557.96s  hit_rate=0.0%  bytes_read=0
+  http://3.84.76.53:8080
+    input=28,728  requests=17  latency=2610.64s  hit_rate=0.0%  bytes_read=0
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 5
+  Total time    : 1250.67 s
+  Avg per task  : 25.01 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : naive
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 61,492
+  Output tokens : 26,527
+  Requests      : 50
+  LLM latency   : 5440.60 s total
+  --- Local state cache ---
+  Bytes written : 0
+  Bytes read    : 0
+  Hits          : 0  Misses: 0  Rate: 0.0%
+
+  --- Per-worker breakdown ---
+  http://44.215.108.149:8080
+    input=12,371  requests=10  latency=1152.74s  hit_rate=0.0%  bytes_read=0
+  http://54.237.115.58:8080
+    input=12,236  requests=8  latency=1106.38s  hit_rate=0.0%  bytes_read=0
+  http://34.230.40.38:8080
+    input=12,484  requests=12  latency=1035.53s  hit_rate=0.0%  bytes_read=0
+  http://3.84.76.53:8080
+    input=15,008  requests=12  latency=1201.78s  hit_rate=0.0%  bytes_read=0
+  http://44.197.202.251:8080
+    input=9,393  requests=8  latency=944.17s  hit_rate=0.0%  bytes_read=0
+========================================================
 
 ========================================================
   Tasks         : 50
