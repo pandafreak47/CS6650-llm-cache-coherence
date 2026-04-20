@@ -398,6 +398,15 @@ def main() -> None:
         print(f"Creating test branch '{branch_id}' from '{args.base_branch}'…")
         create_test_branch(args.repo_url, args.base_branch, branch_id, github_token)
 
+    # --- Print worker config before run -------------------------------------
+    if worker_urls:
+        cfg = _http("GET", f"{worker_urls[0]}/metrics")
+        if cfg:
+            print(f"Worker config (from {worker_urls[0]}):")
+            print(f"  LLM backend   : {cfg.get('llm_backend', '?')}")
+            print(f"  Build mode    : {cfg.get('build_mode', '?')}")
+            print(f"  Cache backend : {cfg.get('cache_backend', '?')}")
+
     # --- Reset worker metrics ------------------------------------------------
     if worker_urls:
         print(f"Resetting metrics on {len(worker_urls)} worker(s)…")
