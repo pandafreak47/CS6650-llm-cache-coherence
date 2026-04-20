@@ -1,0 +1,69 @@
+========================================================
+  Tasks         : 50
+  Seed          : 93
+  Workers       : 3
+  Total time    : 1919.52 s
+  Avg per task  : 38.39 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  KV compress   : True
+  Llama seed    : 42
+  Llama temp    : 0.8
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 30,422
+  Output tokens : 32,510
+  Requests      : 50
+  LLM latency   : 4346.59 s total
+  --- Local state cache ---
+  Bytes written : 1,027,219,200
+  Bytes read    : 452,351,634
+  Hits          : 20  Misses: 30  Rate: 40.0%
+
+  --- Per-worker breakdown ---
+  http://3.86.205.6:8080
+    input=12,115  requests=16  latency=1549.27s  hit_rate=43.8%  bytes_read=194,577,465
+  http://54.236.41.165:8080
+    input=9,420  requests=16  latency=1326.41s  hit_rate=43.8%  bytes_read=79,783,149
+  http://54.91.21.237:8080
+    input=8,887  requests=18  latency=1470.91s  hit_rate=33.3%  bytes_read=177,991,020
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : 93
+  Workers       : 5
+  Total time    : 1157.03 s
+  Avg per task  : 23.14 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  KV compress   : True
+  Llama seed    : 42
+  Llama temp    : 0.8
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 30,664
+  Output tokens : 30,206
+  Requests      : 50
+  LLM latency   : 3806.52 s total
+  --- Local state cache ---
+  Bytes written : 1,125,488,031
+  Bytes read    : 498,966,120
+  Hits          : 20  Misses: 31  Rate: 39.2%
+
+  --- Per-worker breakdown ---
+  http://44.200.63.133:8080
+    input=6,713  requests=11  latency=795.99s  hit_rate=45.5%  bytes_read=149,794,581
+  http://100.48.215.211:8080
+    input=6,229  requests=9  latency=822.71s  hit_rate=33.3%  bytes_read=52,491,444
+  http://3.87.25.150:8080
+    input=4,106  requests=5  latency=605.38s  hit_rate=33.3%  bytes_read=71,636,121
+  http://23.20.78.206:8080
+    input=6,504  requests=12  latency=805.96s  hit_rate=50.0%  bytes_read=105,559,191
+  http://44.201.142.39:8080
+    input=7,112  requests=13  latency=776.49s  hit_rate=30.8%  bytes_read=119,484,783
+========================================================

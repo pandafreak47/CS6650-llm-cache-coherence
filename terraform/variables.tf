@@ -155,6 +155,12 @@ variable "kv_compress" {
   default     = true
 }
 
+variable "llama_n_ctx" {
+  type        = number
+  description = "llama.cpp context window size in tokens. Increase if tasks overflow 4096 tokens."
+  default     = 4096
+}
+
 variable "llama_seed" {
   type        = number
   description = "RNG seed for llama.cpp sampling. -1 = random (non-deterministic). Set to any non-negative integer for reproducible outputs."

@@ -80,6 +80,7 @@ module "ecs" {
     { name = "REDIS_URL",         value = var.cache_backend == "redis" ? module.redis[0].redis_url : "" },
     { name = "LLAMA_MODEL_URL",   value = var.llama_model_url },
     { name = "KV_COMPRESS",       value = var.kv_compress ? "1" : "0" },
+    { name = "LLAMA_N_CTX",       value = tostring(var.llama_n_ctx) },
     { name = "LLAMA_SEED",        value = tostring(var.llama_seed) },
     { name = "LLAMA_TEMPERATURE", value = tostring(var.llama_temperature) },
   ]

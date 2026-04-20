@@ -48,7 +48,7 @@ class LlamaLLM(InterfaceLLM):
         self,
         model_path: str,
         end_sequence: str = DEFAULT_END_SEQUENCE,
-        n_ctx: int = 4096,
+        n_ctx: int = int(os.environ.get("LLAMA_N_CTX", "4096")),
     ):
         self._end_sequence = end_sequence
         # LLAMA_SEED=-1 (default) means random; any non-negative int fixes the seed.
@@ -114,13 +114,32 @@ class LlamaLLM(InterfaceLLM):
         n_cached_before = self._model.n_tokens
         self._total_cache_read_tokens += n_cached_before
 
-        result = self._model(
-            full_prompt,
-            max_tokens=max_tokens,
-            stop=[self._end_sequence],
-            echo=False,
-            temperature=self._temperature,
-        )
+        try:
+            result = self._model(
+                full_prompt,
+                max_tokens=max_tokens,
+                stop=[self._end_sequence],
+                echo=False,
+                temperature=self._temperature,
+            )
+        except ValueError as exc:
+            if "exceed context window" not in str(exc):
+                raise
+            # Full prompt overflows n_ctx — retry with task prompt only (no cached context).
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "Context overflow (%s) — retrying with prompt only (no cached prefix)", exc
+            )
+            self._model.reset()
+            n_cached_before = 0
+            full_prompt = prompt
+            result = self._model(
+                full_prompt,
+                max_tokens=max_tokens,
+                stop=[self._end_sequence],
+                echo=False,
+                temperature=self._temperature,
+            )
 
         output: str = result["choices"][0]["text"]
 
