@@ -364,7 +364,7 @@ Phase 4:
 
   --- Config ---
   LLM backend   : llama
-  Build mode    : cached
+  Build mode    : cached - broken
   Cache backend : redis
   --- LLM metrics (aggregated) ---
   Input tokens  : 2,063
@@ -386,7 +386,7 @@ Phase 4:
 
   --- Config ---
   LLM backend   : llama
-  Build mode    : cached
+  Build mode    : cached - broken
   Cache backend : redis
   --- LLM metrics (aggregated) ---
   Input tokens  : 16,865
@@ -399,7 +399,57 @@ Phase 4:
   Hits          : 4  Misses: 6  Rate: 40.0%
 ========================================================
 
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 1
+  Total time    : 5479.41 s
+  Avg per task  : 109.59 s
 
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached - broken
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 82,208
+  Output tokens : 16,071
+  Requests      : 50
+  LLM latency   : 5024.72 s total
+  --- Local state cache ---
+  Bytes written : 139,842
+  Bytes read    : 54,568
+  Hits          : 19  Misses: 31  Rate: 38.0%
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 3
+  Total time    : 3260.94 s
+  Avg per task  : 65.22 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached - broken
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 102,110
+  Output tokens : 23,979
+  Requests      : 50
+  LLM latency   : 6380.68 s total
+  --- Local state cache ---
+  Bytes written : 173,334
+  Bytes read    : 66,610
+  Hits          : 21  Misses: 29  Rate: 42.0%
+
+  --- Per-worker breakdown ---
+  http://54.236.240.205:8080
+    input=36,067  requests=13  latency=2049.94s  hit_rate=53.8%  bytes_read=27,130
+  http://18.215.180.60:8080
+    input=27,140  requests=16  latency=2142.04s  hit_rate=43.8%  bytes_read=18,114
+  http://54.90.41.69:8080
+    input=38,903  requests=21  latency=2188.70s  hit_rate=33.3%  bytes_read=21,366
+========================================================
 
 ========================================================
   Tasks         : 50
@@ -410,7 +460,7 @@ Phase 4:
 
   --- Config ---
   LLM backend   : llama
-  Build mode    : cached
+  Build mode    : cached - broken
   Cache backend : redis
   --- LLM metrics (aggregated) ---
   Input tokens  : 96,284
