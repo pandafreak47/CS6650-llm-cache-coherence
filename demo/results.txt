@@ -488,6 +488,7 @@ Phase 4:
 
 Phase 4 (llama) fixed:
 
+naive:
 ========================================================
   Tasks         : 50
   Seed          : None
@@ -573,7 +574,9 @@ Phase 4 (llama) fixed:
   http://44.197.202.251:8080
     input=9,393  requests=8  latency=944.17s  hit_rate=0.0%  bytes_read=0
 ========================================================
+Note: Input token counts are not directly comparable across runs with different worker counts, since each run mutates the shared Git branch in a different order. Subsequent tasks reading modified files as context see different content depending on concurrent commit ordering. Comparisons between naive and cached mode are made within the same run on the same branch state, preserving consistency for the primary cache-efficiency metrics.
 
+redis-cache:
 ========================================================
   Tasks         : 50
   Seed          : None
@@ -658,4 +661,29 @@ Phase 4 (llama) fixed:
     input=7,804  requests=12  latency=1044.70s  hit_rate=45.5%  bytes_read=93,831,024
   http://54.145.204.45:8080
     input=6,608  requests=10  latency=1201.83s  hit_rate=55.6%  bytes_read=139,912,713
+========================================================
+
+inmemory-cache:
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 1
+  Total time    : 5861.86 s
+  Avg per task  : 117.24 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : memory
+  KV compress   : True
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 29,731
+  Output tokens : 29,484
+  Requests      : 50
+  LLM latency   : 4561.12 s total
+  --- Local state cache ---
+  Bytes written : 1,201,540,218
+  Bytes read    : 407,860,629
+  Hits          : 17  Misses: 33  Rate: 34.0%
 ========================================================
