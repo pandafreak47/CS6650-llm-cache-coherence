@@ -1,0 +1,173 @@
+Problem, Team, and Overview of Experiments
+==========================================
+Describe the problem you want to solve, and why it is important for your future stakeholders.  Introduce each team member, and what they bring to the team. Also identify the kinds of results your experiments will be evaluating, the role AI will play within your project, and your plans to support observability of your system. 
+
+Project Plan and Recent Progress
+================================
+Describe your recent progress in activities related to the proposal.  This should include a timeline and breakdown of tasks, in addition to an overview of "who is doing what" in terms of the project plan you have created, and again, how you are leveraging AI within this plan.  Specifically, identify what you anticipate to be the cost and benefits of using AI within your project development.  
+
+Objectives
+==========
+Define the short- and long-term objectives of your project. Note that a project should have a long-term vision that expands beyond the course, and your plan to support observability is critical. This most likely means that you will be identifying future work in a concrete way.  If you project includes AI components, identify how you going to ensure performance, reliability, and cost control for stakeholders who deploy your system.
+
+Related work
+============
+Discuss the related work pertinent to the project, placing the proposed project in the context of this work.  This should include readings from the course, but can also include any/all outside material that you find useful.  Included in this, identify the 3 other projects on Piazza that are related to yours, how they are similar and how they are different.  Feel free to reach out to those project teams to let them know that you are referencing their work! :)
+
+Methodology
+===========
+Describe the methods and proposed approach, providing sufficient details to allow a reader to assess the feasibility of the proposed activities. Two critical aspects here are (1) how you will be using AI, and (2) support for observability of your system.  Provide a detailed overview of the experiments you will be performing, and what tradeoffs you are evaluating.  
+
+Preliminary Results
+===================
+For each experiment you have designed, include all preliminary results you have collected.  Identify what is left to collect/analyze to finish these results for the project within the timeline. What do you think the pathological worst-case/base-case workload for you, and why?
+
+Impact
+======
+Explain the anticipated significance of the work.  Why are people going to see this project and care about your results?  Can other people in the class use your project and help you test it (that is FANTASTIC if you can do that!)?
+
+
+
+Reponses
+problem:
+optimize llm with distributed coding agents
+team of just me
+AI is helping code and brain storm
+we have health and status of our service and will eventually build a dashboard for tracking status among multiple agents/pods 
+
+plan & progress:
+phase 1 is complete, add brief project timeline and point to project timeline md file
+AI makes rewriting and pivoting faster, and since it is heavily subsidized by investors, its is cost effective
+
+objective:
+many agents, efficient context caching
+
+related work:
+relevant piazza posts:
+```
+Posting our project update for SportsPulse - happy to hear feedback or connect with others on similar themes!
+
+1. Team
+
+Prannov Jamadagni & Eroniction — both EST. We’re a two-person team and not looking for additional members at this time.
+
+2. Experiments (and why these are the right ones)
+
+Our system has two distinct traffic patterns that need separate validation: a write-heavy path (live game events flowing in) and a read-heavy path (fans querying stats). Each experiment targets one layer of the stack.
+
+Experiment 1 — Kafka vs. Direct DB Writes (Write Path) We’ll simulate live game event ingestion at 500–2000 events/min and compare two configurations: events written directly to PostgreSQL vs. events buffered through Kafka before processing. We measure throughput, p95 write latency, and error rate under load spikes.
+
+Why this experiment: The write path is the first place the system will break under a live game spike. Kafka decouples ingestion from processing, but we want data to prove how much that helps and at what event rate direct writes start degrading.
+
+Experiment 2 — Redis Cache vs. DB Read Replicas (Read Path) We’ll ramp fan query load from 100 → 5000 req/s against three configurations: no cache (single DB), read replicas (no cache), and Redis cache (single DB). We measure p50/p95 latency and the point at which DB connections exhaust.
+
+Why this experiment: Read traffic from fans dwarfs write traffic from games. We want to find the crossover point where a cache is more cost-effective than spinning up replicas — this directly informs the production architecture decision.
+
+Experiment 3 — ECS Horizontal Scaling (Bottleneck Identification) We’ll scale the query service from 1 → 2 → 4 → 8 ECS tasks under a fixed 3000 req/s load and measure where throughput gains stop being linear. We expect the bottleneck to shift: service → DB connection pool → cache.
+
+Why this experiment: Horizontal scaling shifts bottlenecks rather than eliminating them (learned this from HW6!). We want to trace exactly where each layer saturates so we can make informed decisions about where to invest infrastructure spend.
+
+3. How We’re Adding Value Beyond AI
+
+AI can scaffold code and suggest architectures — but it can’t run load tests, interpret our specific results, or make judgment calls about tradeoffs in our system. Here’s where we’re bringing the human judgment:
+
+Experiment design: deciding which variables to isolate and why those are the right questions to ask for a sports analytics workload specifically
+Results interpretation: reading the inflection points in our Locust/load test charts and diagnosing why a bottleneck appears where it does (CPU? connections? serialization?)
+Architecture tradeoffs: making the call on Kafka partition count, Redis eviction policy, and ECS task sizing based on what our data shows — not just defaults
+Debugging under load: the interesting bugs only appear at scale and require hands-on debugging, not code generation
+---
+Project Update: 42
+Terraform MCP for Any MCP-Compliant AI Provider
+Hey everyone!
+
+Sharing a quick update from Team 42 on what we’ve been working on.
+
+👥 Who We Are
+We are a team of three: Vinal, Kalhar, and Parin. Our team is locked in and we are not looking for additional members at this point!
+
+🔧 What We’re Building
+We’re developing a Terraform MCP, but not the kind that just serves documentation. The idea is to enhance the functionality of any MCP-compliant tool or AI provider (Claude Code, Cursor, Copilot, etc.) by giving it richer, structured access to Terraform infrastructure context. This includes:
+
+Direct CLI access to AWS, GCP, and other providers through the same protocol
+Dependency and service queries as a flat list or through different abstraction layers
+Multiple extraction views so the agent gets exactly the level of detail it needs for the task at hand
+Core idea: We are not rebuilding integrations per provider. We are building one protocol layer that any compliant agent can plug into.
+
+🧪 Experiments We Plan to Run
+We have two main experiments driving our development and they are intentional choices, not just checkboxes.
+
+1. Portability Test
+We want to validate that our MCP genuinely adds value across different LLMs and MCP-compliant tools, not just one. If our protocol only works well with a single provider, we have not actually solved the problem we set out to solve. We will be testing the same MCP across multiple compliant tools to make sure the value holds.
+
+2. Baseline Improvement Comparison
+We will run the same infrastructure-related tasks using Claude Code with and without our MCP, and measure the difference in:
+
+🔢 Token usage
+⚡ Response speed
+✅ Task accuracy
+This directly answers whether our abstraction layers are helping the model do better work more efficiently, or just adding noise. These two experiments together tell us whether we built something portable and whether it actually makes things better, the two things that matter most for this project.
+---
+Team members: Dylan (Deng) Pan, Zongwang Wang, Lucas (Zhuge) Chen, Ellis (Shiyue) Guo
+
+What's New:
+
+We're adding a microservice to our original architecture — an AI DevOps Agent that turns the whole system into a self-optimizing feedback loop. Here's the idea:
+
+The agent sits downstream of our analytics service, consumes aggregated CPU trend data from Kafka, and calls an LLM API (Claude) to reason about what infrastructure changes to make. It then generates and applies Terraform configurations declaratively to the live AWS environment — things like scaling ECS task count or adjusting Kafka partition counts. The result of that infrastructure change flows back into the system as new producer metrics, and the cycle repeats.
+
+So the full loop looks like this:
+
+Producers → Kafka → Analytics → AI Agent → Terraform Apply → Infrastructure Change → back to Producers → ...
+
+Instead of a human sitting in the middle deciding when to scale, the LLM reads the trend, reasons about it, and acts — all within the same distributed messaging pipeline we already have.
+
+The agent also publishes every decision it makes back to a infra-events-topic so we have a full audit log of what changed, why, and what happened after. This feeds a dedicated Grafana panel so operators can actually see the agent's reasoning alongside the CPU metrics.
+
+Value Beyond AI
+
+An AI code agent alone can write code — but it can't decide what to build, which tools are the right fit, or how to wire everything together into a system that actually works at scale. That's where our team comes in.
+We, as humans, chose to utilize the following tools and frameworks to create this project — and each choice reflects deliberate engineering judgment:
+
+Apache Kafka (KRaft mode) — We chose Kafka over simpler alternatives (e.g., Redis pub/sub, SQS) specifically because consumer groups let us scale each downstream service independently, and KRaft gives us fault-tolerant leader election without a ZooKeeper dependency. An AI agent doesn't make that tradeoff — we did.
+
+Prometheus + Grafana — We chose this observability stack and designed the infra-events-topic feedback channel specifically to make the AI agent's decisions visible and explainable. We defined what metrics matter, what dashboards tell the right story, and how to connect infrastructure change events to system behavior over time.
+
+ECS + Docker Compose — We architected the service boundaries, decided which components run as independent microservices, and ensured the AI agent is isolated enough that its failure doesn't cascade. That fault isolation boundary is a human design decision.
+The feedback loop itself — The closed-loop architecture (producers → Kafka → analytics → AI agent → Terraform → back to infrastructure) is something we designed. The AI executes one step inside it. We designed the whole thing.
+
+Experiments
+
+Original experiments (retained):
+
+Producer scalability — scale 1 → 20 producers, measure Kafka throughput and latency
+Fault tolerance — kill broker nodes, measure KRaft re-election time
+Consumer scalability — scale analytics/alert instances, measure consumer lag
+Alert latency — simulate high CPU, measure end-to-end detection → email time
+
+New experiments for the AI agent:
+
+Scaling Decision Accuracy — inject synthetic load patterns (step, ramp, sudden spike) and measure how accurately and quickly the agent issues the correct Terraform action. Metrics: decision latency (metric ingestion → terraform apply), correct scaling rate.
+Closed-Loop Stability — run the full feedback loop under dynamic load for an extended period. Does the system converge to stable resource allocation, or does it oscillate? We'll measure overshoot/undershoot behavior.
+Agent Failure Isolation — crash the AI agent mid-cycle and verify the rest of the system keeps running. Measure recovery time and confirm the agent resumes from the correct Kafka offset on restart.
+Timeline
+```
+
+
+Methodology:
+ai is used for debugging and initial project set ups. AI is used for efficient terraform configs and code refactoring. observe from endpoints & cloudwatch
+get experiments
+
+preliminary results:
+We pushed 50 tasks with the dummy llm, where processed tokens are estimated as one for every four tokens
+
+naive is giving entire context each time
+cache is detailed in readme
+
+msg cache approach | estimated tokens processed 
+naive no cache | 34364
+cached | 27508
+
+yielded 20% less tokens processed
+
+impact:
+This shows my detailed understanding of distrbuted systems and AI architectures. Super good for ai infrastructure work and showing how I can optimize compute for swarms of ai agents. Other students can most definitely use it for thier own git repos by swapping git token and repo url!

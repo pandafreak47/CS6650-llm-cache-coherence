@@ -1,3 +1,5 @@
+<!-- [5 marks] Code!   This is a link to your shared repo, and can also include links to individual repos that were active during the creation of your final project.  The README should introduce the project and why you built it!  The idea here is to show "activity" along the way, with how the project progressed over time (commits, issues, etc., everything you have) -->
+
 # Shared Prefill Over Distributed AI Agents — CS6650 Distributed Systems
 
 **Course:** CS6650 Distributed Computing Systems
@@ -174,67 +176,6 @@ LLMState                    — base / empty state (DummyLLM, naive builds)
 5. `/metrics` reports `total_cache_read_tokens` and `total_cache_creation_tokens` from Anthropic's usage response.
 
 `BUILD_MODE=naive` with `AnthropicLLM` also works: the empty state means no content blocks are accumulated, so `generate()` sends a single full-prompt block with no `cache_control` marker (no caching benefit, but correct output).
-
----
-
-## Experiment Matrix
-
-See [ProjectTimeline.md](ProjectTimeline.md) for the full phase plan.
-
-| Strategy \ Workers         | 1 | 3 | 5+ |
-|----------------------------|---|---|----|
-| Naive (no caching)         |   |   |    |
-| Centralized LLM State Cache|   |   |    |
-| Smart caching order        |   |   |    |
-| Distributed cache          |   |   |    |
-
-Metrics collected per cell: total tokens computed, cache hit rate, mean task latency.
-
----
-
-## Experiment Results
-
-### Phase 1: DummyLLM Token Count Baseline (1 pod)
-
-50 tasks sampled from the test repo dependency graph (fixed seed). Token count approximated as `len(prompt) // 4` by DummyLLM.
-
-| Mode   | Tasks | Approx. Input Tokens | Cache Hit Rate |
-|--------|-------|----------------------|----------------|
-| Naive  | 50    | 34,364               | N/A            |
-| Cached | 50    | 27,508               | ~38%           |
-
-Cached mode sent **~20% fewer tokens** than naive. Savings come from context files shared across tasks (`utils/validators.py`, `db/connection.py`, `models/user.py`) being processed once and reused from the cache.
-
-### Phase 2: Centralized LLM State Cache — DummyLLM validation
-
-| Workers | Cache Entries Written | Cache Hit Rate | Notes |
-|---------|-----------------------|----------------|-------|
-| 3       |                       |                |       |
-
-### Phase 3: Crash Recovery
-
-| Scenario | Redelivery Delay (s) | Task Outcome | Notes |
-|----------|--------------------|--------------|-------|
-| Crash before LLM call | | | |
-| Crash after LLM, before commit | | | |
-| Crash after commit, before ack | | | Duplicate commit — expected and benign, since committing the same change twice is idempotent |
-
-### Phase 4: llama.cpp — Full Experiment Matrix
-
-| Strategy \ Workers         | 1 | 3 | 5+ |
-|----------------------------|---|---|----|
-| Naive (no caching)         |   |   |    |
-| Centralized LLM State Cache|   |   |    |
-
-Metrics per cell: total tokens computed / cache hit rate / mean task latency (s).
-
-### Phase 5: Smart Caching Order
-
-| Ordering Strategy | Workers | Total Tokens | Cache Hit Rate | vs. Size-Based |
-|-------------------|---------|--------------|----------------|----------------|
-| Size descending (baseline) | 3 | | | — |
-| Directory grouping | 3 | | | |
-| Git recency | 3 | | | |
 
 ---
 

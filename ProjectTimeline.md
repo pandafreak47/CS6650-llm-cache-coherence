@@ -86,8 +86,8 @@ Cached mode sent **53% fewer input tokens** than naive. 17 of 50 tasks hit a cac
 - ✅ Implement `LlamaLLM` with full `LlamaKVState` and `metrics()` support
 - ✅ Auto-scale Fargate compute tier based on `llm_backend` (Terraform locals)
 - ✅ Download model from HuggingFace on boot with `/health` progress reporting
-- Implement KV state serialization/deserialization to/from Redis
-- Run the full matrix: naive vs. centralized cache, across 1 / 3 / 5+ pods
+- ✅ Implement KV state serialization/deserialization to/from Redis
+- ✅ Run the full matrix: naive vs. centralized cache, across 1 / 3 / 5+ pods
 
 **Experiment:** Full matrix, llama.cpp, real token computation
 
@@ -95,6 +95,11 @@ Cached mode sent **53% fewer input tokens** than naive. 17 of 50 tasks hit a cac
 |----------------------------|---|---|----|
 | Naive (no caching)         |   |   |    |
 | Centralized KV Cache       |   |   |    |
+| Centralized KV Cache - no compression       |   | N/A | N/A  |
+| In Memory Cache        |   | N/A | N/A  |
+| In Memory Cache - no compression       |   | N/A | N/A  |
+
+note: compression and no compression tests and in memeory tests added later to show best network and compression overhead
 
 Metrics per cell: total tokens computed, cache hit rate, mean task latency (s).
 
