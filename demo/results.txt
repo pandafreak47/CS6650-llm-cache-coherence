@@ -512,5 +512,88 @@ Phase 4 (llama) fixed:
 
 
 
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 1
+  Total time    : 3909.85 s
+  Avg per task  : 78.20 s
 
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 26,714
+  Output tokens : 29,237
+  Requests      : 50
+  LLM latency   : 3097.28 s total
+  --- Local state cache ---
+  Bytes written : 1,164,312,834
+  Bytes read    : 401,638,302
+  Hits          : 20  Misses: 30  Rate: 40.0%
+  ========================================================
 
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 3
+  Total time    : 1760.74 s
+  Avg per task  : 35.21 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 26,677
+  Output tokens : 26,920
+  Requests      : 50
+  LLM latency   : 3669.76 s total
+  --- Local state cache ---
+  Bytes written : 1,362,888,903
+  Bytes read    : 381,132,672
+  Hits          : 19  Misses: 31  Rate: 38.0%
+
+  --- Per-worker breakdown ---
+  http://44.201.44.162:8080
+    input=6,900  requests=16  latency=1054.16s  hit_rate=62.5%  bytes_read=185,678,568
+  http://98.92.252.4:8080
+    input=8,317  requests=17  latency=1310.30s  hit_rate=23.5%  bytes_read=105,850,959
+  http://100.54.217.152:8080
+    input=11,460  requests=17  latency=1305.30s  hit_rate=29.4%  bytes_read=89,603,145
+========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 5
+  Total time    : 1430.08 s
+  Avg per task  : 28.60 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 38,409
+  Output tokens : 42,440
+  Requests      : 55
+  LLM latency   : 5674.07 s total
+  --- Local state cache ---
+  Bytes written : 1,211,899,401
+  Bytes read    : 448,924,905
+  Hits          : 21  Misses: 29  Rate: 42.0%
+
+  --- Per-worker breakdown ---
+  http://98.92.252.4:8080
+    input=7,674  requests=11  latency=1150.00s  hit_rate=20.0%  bytes_read=28,980,579
+  http://44.201.44.162:8080
+    input=6,983  requests=9  latency=1057.62s  hit_rate=37.5%  bytes_read=35,587,413
+  http://100.54.217.152:8080
+    input=9,340  requests=13  latency=1219.92s  hit_rate=50.0%  bytes_read=150,613,176
+  http://54.145.186.42:8080
+    input=7,804  requests=12  latency=1044.70s  hit_rate=45.5%  bytes_read=93,831,024
+  http://54.145.204.45:8080
+    input=6,608  requests=10  latency=1201.83s  hit_rate=55.6%  bytes_read=139,912,713
+========================================================
