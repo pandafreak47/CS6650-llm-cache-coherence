@@ -63,6 +63,7 @@ def _download_with_progress(url: str, dest: str) -> None:
 _BUILD_MODE = os.environ.get("BUILD_MODE", "naive").lower()      # "naive" | "cached"
 _KV_CACHE_SIZE = int(os.environ.get("KV_CACHE_SIZE", "100"))
 _CACHE_BACKEND = os.environ.get("CACHE_BACKEND", "memory").lower()  # "memory" | "redis"
+_KV_COMPRESS = os.environ.get("KV_COMPRESS", "1").strip() not in ("0", "false", "no")
 
 # ---------------------------------------------------------------------------
 # SQS worker loop
@@ -194,6 +195,7 @@ def get_metrics():
         llm_backend=os.getenv("LLM_BACKEND", "dummy"),
         build_mode=_BUILD_MODE,
         cache_backend=_CACHE_BACKEND,
+        kv_compress=_KV_COMPRESS,
         total_input_tokens=in_tok,
         total_output_tokens=out_tok,
         total_latency_ms=latency,

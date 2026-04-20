@@ -406,6 +406,7 @@ def main() -> None:
             print(f"  LLM backend   : {cfg.get('llm_backend', '?')}")
             print(f"  Build mode    : {cfg.get('build_mode', '?')}")
             print(f"  Cache backend : {cfg.get('cache_backend', '?')}")
+            print(f"  KV compress   : {cfg.get('kv_compress', '?')}")
 
     # --- Reset worker metrics ------------------------------------------------
     if worker_urls:
@@ -450,6 +451,7 @@ def main() -> None:
         print(f"  LLM backend   : {first.get('llm_backend', '?')}")
         print(f"  Build mode    : {first.get('build_mode', '?')}")
         print(f"  Cache backend : {first.get('cache_backend', '?')}")
+        print(f"  KV compress   : {first.get('kv_compress', '?')}")
         print(f"  --- LLM metrics (aggregated) ---")
         print(f"  Input tokens  : {m['total_input_tokens']:,}")
         print(f"  Output tokens : {m['total_output_tokens']:,}")

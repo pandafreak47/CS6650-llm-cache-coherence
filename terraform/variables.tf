@@ -149,6 +149,12 @@ variable "cache_backend" {
   }
 }
 
+variable "kv_compress" {
+  type        = bool
+  description = "Enable zlib compression on serialised LlamaKVState blobs. Reduces storage size ~3-5x at the cost of CPU on every accumulate()/generate() call."
+  default     = true
+}
+
 variable "redis_node_type" {
   type        = string
   description = "ElastiCache node type for the shared Redis cache."

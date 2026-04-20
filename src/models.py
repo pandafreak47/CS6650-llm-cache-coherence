@@ -102,6 +102,7 @@ class MetricsResponse(BaseModel):
     llm_backend: str = ""
     build_mode: str = ""
     cache_backend: str = ""
+    kv_compress: bool = True
     total_input_tokens: int
     total_output_tokens: int
     total_latency_ms: float

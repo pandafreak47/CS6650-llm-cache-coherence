@@ -13,14 +13,20 @@ from .interface import InterfaceLLM, DEFAULT_END_SEQUENCE
 from ..models import LLMState, LlamaKVState
 
 
-def _save_kv(model: Llama) -> str:
-    """Pickle + zlib-compress LlamaState → base64 string for JSON storage."""
-    return base64.b64encode(zlib.compress(pickle.dumps(model.save_state()))).decode()
+def _save_kv(model: Llama, compress: bool = True) -> str:
+    """Pickle LlamaState → base64 string; optionally zlib-compress before encoding."""
+    data = pickle.dumps(model.save_state())
+    if compress:
+        data = zlib.compress(data)
+    return base64.b64encode(data).decode()
 
 
-def _load_kv(model: Llama, b64: str) -> None:
+def _load_kv(model: Llama, b64: str, compress: bool = True) -> None:
     """Restore model KV state from base64 string."""
-    model.load_state(pickle.loads(zlib.decompress(base64.b64decode(b64))))
+    data = base64.b64decode(b64)
+    if compress:
+        data = zlib.decompress(data)
+    model.load_state(pickle.loads(data))
 
 
 class LlamaLLM(InterfaceLLM):
@@ -47,6 +53,7 @@ class LlamaLLM(InterfaceLLM):
             n_threads=os.cpu_count() or 4,
             verbose=False,
         )
+        self._compress = os.environ.get("KV_COMPRESS", "1").strip() not in ("0", "false", "no")
         self._total_input_tokens = 0
         self._total_output_tokens = 0
         self._total_cache_read_tokens = 0
@@ -57,7 +64,7 @@ class LlamaLLM(InterfaceLLM):
 
     def accumulate(self, prompt: str, state: LLMState) -> LlamaKVState:
         if isinstance(state, LlamaKVState) and state.llama_state_b64:
-            _load_kv(self._model, state.llama_state_b64)
+            _load_kv(self._model, state.llama_state_b64, self._compress)
         else:
             self._model.reset()
 
@@ -74,7 +81,7 @@ class LlamaLLM(InterfaceLLM):
         return LlamaKVState(
             prompt=extended,
             token_count=self._model.n_tokens,
-            llama_state_b64=_save_kv(self._model),
+            llama_state_b64=_save_kv(self._model, self._compress),
         )
 
     def generate(
@@ -87,7 +94,7 @@ class LlamaLLM(InterfaceLLM):
         t0 = time.monotonic()
 
         if isinstance(state, LlamaKVState) and state.llama_state_b64:
-            _load_kv(self._model, state.llama_state_b64)
+            _load_kv(self._model, state.llama_state_b64, self._compress)
         else:
             self._model.reset()
 
