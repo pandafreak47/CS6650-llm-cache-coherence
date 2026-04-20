@@ -64,6 +64,8 @@ _BUILD_MODE = os.environ.get("BUILD_MODE", "naive").lower()      # "naive" | "ca
 _KV_CACHE_SIZE = int(os.environ.get("KV_CACHE_SIZE", "100"))
 _CACHE_BACKEND = os.environ.get("CACHE_BACKEND", "memory").lower()  # "memory" | "redis"
 _KV_COMPRESS = os.environ.get("KV_COMPRESS", "1").strip() not in ("0", "false", "no")
+_LLAMA_SEED = int(os.environ.get("LLAMA_SEED", "-1"))
+_LLAMA_TEMPERATURE = float(os.environ.get("LLAMA_TEMPERATURE", "0.8"))
 
 # ---------------------------------------------------------------------------
 # SQS worker loop
@@ -196,6 +198,8 @@ def get_metrics():
         build_mode=_BUILD_MODE,
         cache_backend=_CACHE_BACKEND,
         kv_compress=_KV_COMPRESS,
+        llama_seed=_LLAMA_SEED,
+        llama_temperature=_LLAMA_TEMPERATURE,
         total_input_tokens=in_tok,
         total_output_tokens=out_tok,
         total_latency_ms=latency,

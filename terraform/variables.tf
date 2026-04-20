@@ -155,6 +155,18 @@ variable "kv_compress" {
   default     = true
 }
 
+variable "llama_seed" {
+  type        = number
+  description = "RNG seed for llama.cpp sampling. -1 = random (non-deterministic). Set to any non-negative integer for reproducible outputs."
+  default     = -1
+}
+
+variable "llama_temperature" {
+  type        = number
+  description = "Sampling temperature for llama.cpp. 0.0 = greedy (seed irrelevant). >0 = stochastic sampling — pair with a fixed llama_seed for deterministic results."
+  default     = 0.8
+}
+
 variable "redis_node_type" {
   type        = string
   description = "ElastiCache node type for the shared Redis cache."

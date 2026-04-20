@@ -676,7 +676,6 @@ inmemory-cache:
   LLM backend   : llama
   Build mode    : cached
   Cache backend : memory
-  KV compress   : True
   --- LLM metrics (aggregated) ---
   Input tokens  : 29,731
   Output tokens : 29,484
@@ -687,3 +686,26 @@ inmemory-cache:
   Bytes read    : 407,860,629
   Hits          : 17  Misses: 33  Rate: 34.0%
 ========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : None
+  Workers       : 1
+  Total time    : 4975.80 s
+  Avg per task  : 99.52 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : memory
+  KV compress   : False
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 26,745
+  Output tokens : 28,622
+  Requests      : 50
+  LLM latency   : 4037.22 s total
+  --- Local state cache ---
+  Bytes written : 3,884,474,829
+  Bytes read    : 1,532,443,635
+  Hits          : 18  Misses: 32  Rate: 36.0%
+======================================================== 

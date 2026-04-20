@@ -47,10 +47,15 @@ class LlamaLLM(InterfaceLLM):
         n_ctx: int = 4096,
     ):
         self._end_sequence = end_sequence
+        # LLAMA_SEED=-1 (default) means random; any non-negative int fixes the seed.
+        _seed_raw = int(os.environ.get("LLAMA_SEED", "-1"))
+        self._seed = _seed_raw if _seed_raw >= 0 else Llama.LLAMA_DEFAULT_SEED if hasattr(Llama, "LLAMA_DEFAULT_SEED") else 0xFFFFFFFF
+        self._temperature = float(os.environ.get("LLAMA_TEMPERATURE", "0.8"))
         self._model = Llama(
             model_path=model_path,
             n_ctx=n_ctx,
             n_threads=os.cpu_count() or 4,
+            seed=self._seed,
             verbose=False,
         )
         self._compress = os.environ.get("KV_COMPRESS", "1").strip() not in ("0", "false", "no")
@@ -110,6 +115,7 @@ class LlamaLLM(InterfaceLLM):
             max_tokens=max_tokens,
             stop=[self._end_sequence],
             echo=False,
+            temperature=self._temperature,
         )
 
         output: str = result["choices"][0]["text"]

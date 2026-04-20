@@ -346,7 +346,7 @@ def main() -> None:
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
+        default=93,
         help="Random seed for task sampling (omit for non-deterministic)",
     )
     parser.add_argument(
@@ -407,6 +407,9 @@ def main() -> None:
             print(f"  Build mode    : {cfg.get('build_mode', '?')}")
             print(f"  Cache backend : {cfg.get('cache_backend', '?')}")
             print(f"  KV compress   : {cfg.get('kv_compress', '?')}")
+            if cfg.get('llm_backend') == 'llama':
+                print(f"  Llama seed    : {cfg.get('llama_seed', '?')}")
+                print(f"  Llama temp    : {cfg.get('llama_temperature', '?')}")
 
     # --- Reset worker metrics ------------------------------------------------
     if worker_urls:
@@ -452,6 +455,9 @@ def main() -> None:
         print(f"  Build mode    : {first.get('build_mode', '?')}")
         print(f"  Cache backend : {first.get('cache_backend', '?')}")
         print(f"  KV compress   : {first.get('kv_compress', '?')}")
+        if first.get('llm_backend') == 'llama':
+            print(f"  Llama seed    : {first.get('llama_seed', '?')}")
+            print(f"  Llama temp    : {first.get('llama_temperature', '?')}")
         print(f"  --- LLM metrics (aggregated) ---")
         print(f"  Input tokens  : {m['total_input_tokens']:,}")
         print(f"  Output tokens : {m['total_output_tokens']:,}")
