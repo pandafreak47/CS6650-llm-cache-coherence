@@ -22,9 +22,13 @@ def _save_kv(model: Llama, compress: bool = True) -> str:
 
 
 def _load_kv(model: Llama, b64: str, compress: bool = True) -> None:
-    """Restore model KV state from base64 string."""
+    """Restore model KV state from base64 string.
+
+    Auto-detects compression from magic bytes (zlib=0x78, pickle=0x80) so
+    states written with a different compress setting are still readable.
+    """
     data = base64.b64decode(b64)
-    if compress:
+    if data[0] == 0x78:  # zlib magic byte — decompress regardless of flag
         data = zlib.decompress(data)
     model.load_state(pickle.loads(data))
 

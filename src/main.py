@@ -217,6 +217,7 @@ def get_metrics():
 def clear_metrics():
     global _total_requests
     _llm.metrics(reset=True)
+    _cache.clear()
     _cache.reset_stats()
     _total_requests = 0
     return {"cleared": True}

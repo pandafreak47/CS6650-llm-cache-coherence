@@ -85,6 +85,11 @@ class KVCacheInterface(ABC):
         """Zero all I/O counters."""
         ...
 
+    @abstractmethod
+    def clear(self) -> int:
+        """Remove all entries. Returns the number of entries evicted."""
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Redis serialization helpers
@@ -186,6 +191,14 @@ class RedisKVCache(KVCacheInterface):
     def reset_stats(self) -> None:
         self._stats = CacheStats()
 
+    def clear(self) -> int:
+        all_keys = self._r.smembers(_IDX_KEY)
+        for k in all_keys:
+            self._r.delete(_rkey(k))
+        self._r.delete(_IDX_KEY)
+        self._r.delete(_LRU_KEY)
+        return len(all_keys)
+
 
 # ---------------------------------------------------------------------------
 # In-memory implementation
@@ -246,3 +259,8 @@ class InMemoryKVCache(KVCacheInterface):
 
     def reset_stats(self) -> None:
         self._stats = CacheStats()
+
+    def clear(self) -> int:
+        count = len(self._cache)
+        self._cache.clear()
+        return count
