@@ -9,7 +9,11 @@
 
 ## Overview
 
-This project investigates whether distributed AI coding agents can share and reuse LLM prefix-cache state to reduce redundant token computation, and what coherence guarantees are needed to do so correctly. Agents pull coding tasks from a shared queue, read and modify a shared GitHub repository, and call an LLM to perform each task. The central question is: when multiple agents share the same context files, can we avoid re-running the attention prefill computation for those files on every agent — and what breaks when we try?
+Modern LLM inference is expensive, and a large share of that cost is *prefill* — the attention pass over all context tokens before the model generates a single output token. When multiple AI agents work on the same codebase, they repeatedly prefill the same shared context files from scratch on every task. This project asks: can we eliminate that redundancy?
+
+Built for CS6650 Distributed Computing Systems course at Northeastern University, this project investigates whether distributed AI coding agents can share and reuse real LLM KV-cache state across workers to reduce redundant prefill computation, and what coherence guarantees are needed to do so correctly. Agents pull coding tasks from a shared SQS queue, read and modify a shared GitHub repository, and call a local LlamaLLM (or Anthropic API) to complete each task. The central question is: when multiple agents share the same context files, can we cache the attention computation for those files once and reuse it across workers — and does the overhead of sharing that state pay off?
+
+The project was built and iterated in phases — from a naive baseline through real KV tensor caching, Redis-backed cross-worker sharing, zlib compression, and finally adaptive cache ordering strategies. See [demo/Project Management.md](demo/Project%20Management.md) for the full implementation history and [demo/Experiment Results.md](demo/Experiment%20Results.md) for results and analysis.
 
 ---
 
