@@ -28,6 +28,10 @@ All experiments use TinyLlama-1.1B-Chat Q4_K_M on ECS Fargate (2 vCPU / 4 GB per
 | Redis Cached | 3  | 1,919.52 s | 38.39 s | 30,422     | 4,346.59 s  | 40.0%    |
 | Redis Cached | 5  | 1,157.03 s | 23.14 s | 30,664     | 3,806.52 s  | 39.2%    |
 
+![Wall time vs. worker count — crossover at 3 workers](figures/exp1_wall_time.png)
+
+![Prefill tokens vs. worker count — ~54% reduction with caching](figures/exp1_tokens.png)
+
 ### Analysis
 
 The caching strategy reduces prefill tokens by **~54%** consistently across all worker counts (60–83K naive → ~28–31K cached). However, the wall-time benefit depends entirely on worker count:
@@ -61,6 +65,8 @@ LLM latency increases from 1W→3W in naive mode (3,688s → 5,520s) because eac
 | Redis     | Off         | 5,159.06 s  | 4,295.51 s  | ~3.12 GB     |
 | Redis     | On          | 5,201.88 s  | 4,337.43 s  | ~0.82 GB     |
 
+![Backend and compression overhead — total time, LLM latency, and bytes written](figures/exp2_backend_compression.png)
+
 ### Analysis
 
 **In-memory vs. Redis (compression off):** In-memory is **24% faster** in total time (3,926s vs. 5,159s) and **21% faster** in LLM latency (3,387s vs. 4,296s). The delta (~1,233s wall time over 50 tasks) is entirely due to Redis network I/O — each `accumulate()` writes a ~60 MB blob and each `generate()` reads one, adding ~25s of network overhead per task on average.
@@ -93,6 +99,8 @@ LLM latency increases from 1W→3W in naive mode (3,688s → 5,520s) because eac
 | `size_asc` | 1,500.18 s | 30.00 s | 25,092 | 3,261.74 s | 40.0% | ~680 MB |
 | `frequency` + `size_desc` fallback | 2,060.97 s | 41.22 s | 30,631 | 4,885.25 s | 42.0% | ~962 MB |
 | `frequency` + `size_asc` fallback | 1,333.83 s | 26.68 s | 26,800 | 2,986.35 s | 40.0% | ~823 MB |
+
+![Ordering strategy comparison — wall time, LLM latency, and prefill tokens](figures/exp3_ordering.png)
 
 ### Analysis
 
