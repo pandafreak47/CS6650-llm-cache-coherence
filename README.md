@@ -103,7 +103,7 @@ Fetches all context files and the target file from Git, assembles one large prom
 
 ### Cached
 
-Treats context files as a set and finds the largest cached subset. Orders the remaining (uncached) files by descending size — largest files contribute the most tokens and are most likely to be shared with future tasks. Calls `llm.accumulate()` for each uncached file to extend the state without generating output, saving each new state to the cache. Passes only the target file + task as the final prompt, with the full context carried in the state.
+Treats context files as a set and finds the largest cached subset. Orders the remaining (uncached) files using the active `CACHE_ORDER` strategy (see [Context-File Ordering](#context-file-ordering)). Calls `llm.accumulate()` for each uncached file to extend the state without generating output, saving each new state to the cache. Passes only the target file + task as the final prompt, with the full context carried in the state.
 
 ```
 Context files: {ctx1, ctx2, ctx3}
@@ -115,6 +115,22 @@ Final prompt:  [target file] [task]  +  state  →  LLM
 For `AnthropicLLM`, accumulation is free — no API call is made. The state holds content blocks that are re-sent with `cache_control` markers on the real generation call, triggering Anthropic's server-side prefix cache.
 
 For `LlamaLLM`, accumulation runs the actual prefill computation on only the new tokens and stores real KV tensors — see [LlamaLLM](#llamallm--model--compute) below.
+
+### Context-File Ordering
+
+The order in which uncached context files are accumulated matters: each intermediate state is saved as a cache entry, so the order determines which subsets of files future tasks can hit on. For example, accumulating `A→B→C` saves keys `{A}`, `{A,B}`, `{A,B,C}` — a future task with context `{B,C}` gets a miss even though B and C were processed, because `{B,C}` was never saved as a standalone entry.
+
+The active strategy is selected via `CACHE_ORDER` at startup:
+
+| Strategy | Description |
+|----------|-------------|
+| `size_desc` | Largest files first (default). Maximises token savings per cached entry. |
+| `size_asc` | Smallest files first. Builds many small intermediate states quickly. |
+| `frequency` | Most-frequently-seen context files first. Builds a cross-worker frequency table at runtime; ties broken by `CACHE_ORDER_FALLBACK`. |
+| `directory` | *(stubbed)* Group by directory, then by size within each group. |
+| `git_recency` | *(stubbed)* Most stable files first (least recently modified in git). |
+
+The `frequency` strategy maintains a `FrequencyTracker` that increments a per-file counter on every task received. With `CACHE_BACKEND=redis`, all workers share a single frequency table via a Redis hash (`HINCRBY`), so cross-worker observations accumulate in real time. On a cold start (no data yet), `frequency` falls back to the strategy named by `CACHE_ORDER_FALLBACK` (default: `size_desc`). The frequency table is cleared alongside the KV cache on `POST /metrics/clear` so every timed run starts from a cold, identical state.
 
 ---
 
@@ -185,7 +201,8 @@ LLMState                    — base / empty state (DummyLLM, naive builds)
 ├── src/                    # Worker source code
 │   ├── main.py             # Entry point: SQS polling loop + HTTP server
 │   ├── models.py           # LLMState hierarchy, SQSMessage, domain models
-│   ├── message_builder.py  # build_naive() and build_cached()
+│   ├── message_builder.py  # build_naive(), build_cached(), ordering strategies
+│   ├── frequency_tracker.py # FrequencyTrackerInterface + InMemory/Redis impls
 │   ├── git_client.py       # git CLI wrapper (fetch, commit, push)
 │   ├── sqs_client.py       # boto3 SQS wrapper
 │   ├── kv_cache.py         # KVCacheInterface + InMemoryKVCache + RedisKVCache (both LRU)
@@ -205,6 +222,10 @@ LLMState                    — base / empty state (DummyLLM, naive builds)
 │       ├── ecr/            # Container registry
 │       ├── network/        # VPC, subnets, security groups
 │       └── logging/        # CloudWatch log groups
+├── demo/
+│   ├── Experiment Results.md  # Full experiment write-up with results and analysis
+│   ├── Project Management.md  # Phase-by-phase implementation history and decisions
+│   └── results.txt            # Raw seeded experiment output
 ├── ProjectTimeline.md      # Phase-by-phase implementation plan
 └── UpdatedProjectPlan.md   # Architecture design notes
 ```
@@ -215,17 +236,25 @@ LLMState                    — base / empty state (DummyLLM, naive builds)
 
 All runtime behaviour is controlled via environment variables (set in `terraform/variables.tf`):
 
-| Variable            | Default                     | Description |
-|---------------------|-----------------------------|-------------|
-| `LLM_BACKEND`       | `dummy`                     | `dummy`, `anthropic`, or `llama` |
-| `LLM_MODEL`         | `claude-haiku-4-5-20251001` | Model ID (Anthropic only) |
-| `ANTHROPIC_API_KEY` | —                           | Required when `LLM_BACKEND=anthropic` |
-| `GITHUB_TOKEN`      | —                           | GitHub PAT with repo read/write |
-| `SQS_QUEUE_URL`     | —                           | Injected by Terraform |
-| `BUILD_MODE`        | `naive`                     | `naive` or `cached` |
-| `KV_CACHE_SIZE`     | `100`                       | Max LRU entries in the state cache (both memory and Redis backends) |
-| `CACHE_BACKEND`     | `memory`                    | `memory` or `redis` |
-| `REDIS_URL`         | —                           | Required when `CACHE_BACKEND=redis` (injected by Terraform) |
-| `LLAMA_MODEL_PATH`  | `/tmp/model.gguf`           | Local path where the GGUF model is saved after download |
-| `LLAMA_MODEL_URL`   | TinyLlama Q4_K_M on HuggingFace | Override to use a different GGUF model |
-| `AWS_REGION`        | `us-east-1`                 | |
+| Variable                | Default                     | Description |
+|-------------------------|-----------------------------|-------------|
+| `LLM_BACKEND`           | `dummy`                     | `dummy`, `anthropic`, or `llama` |
+| `LLM_MODEL`             | `claude-haiku-4-5-20251001` | Model ID (Anthropic only) |
+| `ANTHROPIC_API_KEY`     | —                           | Required when `LLM_BACKEND=anthropic` |
+| `GITHUB_TOKEN`          | —                           | GitHub PAT with repo read/write |
+| `SQS_QUEUE_URL`         | —                           | Injected by Terraform |
+| `BUILD_MODE`            | `naive`                     | `naive` or `cached` |
+| `KV_CACHE_SIZE`         | `100`                       | Max LRU entries in the state cache (both memory and Redis backends) |
+| `CACHE_BACKEND`         | `memory`                    | `memory` or `redis` |
+| `REDIS_URL`             | —                           | Required when `CACHE_BACKEND=redis` (injected by Terraform) |
+| `CACHE_ORDER`           | `size_desc`                 | Context-file accumulation order: `size_desc`, `size_asc`, `frequency` (or stubbed: `directory`, `git_recency`) |
+| `CACHE_ORDER_FALLBACK`  | `size_desc`                 | Fallback order for `frequency` on cold start and as tiebreaker. Must be `size_desc` or `size_asc`. |
+| `KV_COMPRESS`           | `1`                         | Enable zlib compression on KV state blobs (`1`/`0`). Recommended on for Redis, off for in-memory. |
+| `LLAMA_MODEL_PATH`      | `/tmp/model.gguf`           | Local path where the GGUF model is saved after download |
+| `LLAMA_MODEL_URL`       | TinyLlama Q4_K_M on HuggingFace | Override to use a different GGUF model |
+| `LLAMA_N_CTX`           | `4096`                      | llama.cpp context window size in tokens |
+| `LLAMA_SEED`            | `-1`                        | RNG seed for llama.cpp sampling. `-1` = random; any non-negative int = deterministic |
+| `LLAMA_TEMPERATURE`     | `0.8`                       | Sampling temperature. Pair with a fixed `LLAMA_SEED` for deterministic outputs. |
+| `AWS_REGION`            | `us-east-1`                 | |
+
+See [demo/Experiment Results.md](demo/Experiment%20Results.md) for full experiment write-up and [demo/Project Management.md](demo/Project%20Management.md) for implementation history.
