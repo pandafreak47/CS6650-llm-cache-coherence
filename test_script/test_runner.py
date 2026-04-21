@@ -458,6 +458,8 @@ def main() -> None:
         print(f"  Build mode    : {first.get('build_mode', '?')}")
         print(f"  Cache backend : {first.get('cache_backend', '?')}")
         print(f"  Cache order   : {first.get('cache_order', '?')}")
+        if first.get('cache_order') == 'frequency':
+            print(f"  Order fallback: {first.get('cache_order_fallback', '?')}")
         print(f"  KV compress   : {first.get('kv_compress', '?')}")
         if first.get('llm_backend') == 'llama':
             print(f"  Llama seed    : {first.get('llama_seed', '?')}")

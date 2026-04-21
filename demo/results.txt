@@ -300,3 +300,37 @@ Alternative Caching Protocols:
   http://98.83.163.47:8080
     input=6,355  requests=13  latency=1035.81s  hit_rate=53.8%  bytes_read=81,826,848
 ========================================================
+
+========================================================
+  Tasks         : 50
+  Seed          : 93
+  Workers       : 3
+  Total time    : 2060.97 s
+  Avg per task  : 41.22 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  Cache order   : frequency
+  KV compress   : True
+  Llama seed    : 42
+  Llama temp    : 0.8
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 30,631
+  Output tokens : 32,385
+  Requests      : 50
+  LLM latency   : 4885.25 s total
+  --- Local state cache ---
+  Bytes written : 961,729,194
+  Bytes read    : 460,790,661
+  Hits          : 21  Misses: 29  Rate: 42.0%
+
+  --- Per-worker breakdown ---
+  http://54.83.253.199:8080
+    input=9,719  requests=16  latency=1499.51s  hit_rate=37.5%  bytes_read=126,517,359
+  http://98.81.135.158:8080
+    input=12,024  requests=18  latency=1773.16s  hit_rate=38.9%  bytes_read=159,857,829
+  http://35.153.232.136:8080
+    input=8,888  requests=16  latency=1612.58s  hit_rate=50.0%  bytes_read=174,415,473
+========================================================
