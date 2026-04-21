@@ -407,6 +407,8 @@ def main() -> None:
             print(f"  Build mode    : {cfg.get('build_mode', '?')}")
             print(f"  Cache backend : {cfg.get('cache_backend', '?')}")
             print(f"  Cache order   : {cfg.get('cache_order', '?')}")
+            if cfg.get('cache_order') == 'frequency':
+                print(f"  Order fallback: {cfg.get('cache_order_fallback', '?')}")
             print(f"  KV compress   : {cfg.get('kv_compress', '?')}")
             if cfg.get('llm_backend') == 'llama':
                 print(f"  Llama seed    : {cfg.get('llama_seed', '?')}")

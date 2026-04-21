@@ -104,6 +104,7 @@ class MetricsResponse(BaseModel):
     cache_backend: str = ""
     kv_compress: bool = True
     cache_order: str = "size_desc"
+    cache_order_fallback: str = "size_desc"
     llama_seed: int = -1
     llama_temperature: float = 0.8
     total_input_tokens: int

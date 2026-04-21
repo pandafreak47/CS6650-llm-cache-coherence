@@ -188,3 +188,13 @@ variable "cache_order" {
     error_message = "cache_order must be one of: size_desc, size_asc, frequency, directory, git_recency."
   }
 }
+
+variable "cache_order_fallback" {
+  type        = string
+  description = "Cold-start fallback ordering used by CACHE_ORDER=frequency before the frequency table is populated. Must be an implemented strategy: 'size_desc' or 'size_asc'."
+  default     = "size_desc"
+  validation {
+    condition     = contains(["size_desc", "size_asc"], var.cache_order_fallback)
+    error_message = "cache_order_fallback must be 'size_desc' or 'size_asc'."
+  }
+}

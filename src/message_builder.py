@@ -28,32 +28,38 @@ from .models import LLMState, SQSMessage
 # partial cache hits on any prefix of the ordering.
 # ---------------------------------------------------------------------------
 
-def _order_size_desc(remaining: set[str], sizes: dict[str, int]) -> list[str]:
+def _order_size_desc(remaining: set[str], sizes: dict[str, int], **_) -> list[str]:
     """Largest files first (default). Maximises token savings per cached entry."""
     return sorted(remaining, key=lambda p: sizes[p], reverse=True)
 
 
-def _order_size_asc(remaining: set[str], sizes: dict[str, int]) -> list[str]:
+def _order_size_asc(remaining: set[str], sizes: dict[str, int], **_) -> list[str]:
     """Smallest files first. Builds many small intermediate states quickly."""
     return sorted(remaining, key=lambda p: sizes[p], reverse=False)
 
 
-def _order_frequency(remaining: set[str], sizes: dict[str, int]) -> list[str]:
-    """Most-frequently-seen files first. Not yet implemented."""
-    raise NotImplementedError(
-        "CACHE_ORDER=frequency is not yet implemented. "
-        "Requires a cross-worker frequency table (e.g. Redis HINCRBY)."
-    )
+def _order_frequency(
+    remaining: set[str],
+    sizes: dict[str, int],
+    frequencies: dict[str, int] | None = None,
+    **_,
+) -> list[str]:
+    """Most-frequently-seen files first. Falls back to CACHE_ORDER_FALLBACK on cold start."""
+    base = _frequency_fallback(remaining, sizes)
+    if not frequencies or not any(frequencies.values()):
+        return base
+    # Stable sort preserves fallback order for equal-frequency files.
+    return sorted(base, key=lambda p: frequencies.get(p, 0), reverse=True)
 
 
-def _order_directory(remaining: set[str], sizes: dict[str, int]) -> list[str]:
+def _order_directory(remaining: set[str], sizes: dict[str, int], **_) -> list[str]:
     """Group files by directory, then by size within each group. Not yet implemented."""
     raise NotImplementedError(
         "CACHE_ORDER=directory is not yet implemented."
     )
 
 
-def _order_git_recency(remaining: set[str], sizes: dict[str, int]) -> list[str]:
+def _order_git_recency(remaining: set[str], sizes: dict[str, int], **_) -> list[str]:
     """Most-recently-committed files last (most stable context first). Not yet implemented."""
     raise NotImplementedError(
         "CACHE_ORDER=git_recency is not yet implemented. "
@@ -69,7 +75,14 @@ _ORDERING_STRATEGIES: dict[str, object] = {
     "git_recency": _order_git_recency,
 }
 
+# Implemented (non-stub) strategies that can serve as a fallback.
+_FALLBACK_STRATEGIES = {
+    "size_desc": _order_size_desc,
+    "size_asc":  _order_size_asc,
+}
+
 CACHE_ORDER: str = os.environ.get("CACHE_ORDER", "size_desc").lower()
+CACHE_ORDER_FALLBACK: str = os.environ.get("CACHE_ORDER_FALLBACK", "size_desc").lower()
 
 if CACHE_ORDER not in _ORDERING_STRATEGIES:
     raise ValueError(
@@ -77,7 +90,14 @@ if CACHE_ORDER not in _ORDERING_STRATEGIES:
         f"Valid values: {list(_ORDERING_STRATEGIES)}"
     )
 
+if CACHE_ORDER_FALLBACK not in _FALLBACK_STRATEGIES:
+    raise ValueError(
+        f"Unknown CACHE_ORDER_FALLBACK '{CACHE_ORDER_FALLBACK}'. "
+        f"Valid values: {list(_FALLBACK_STRATEGIES)}"
+    )
+
 _order_files = _ORDERING_STRATEGIES[CACHE_ORDER]
+_frequency_fallback = _FALLBACK_STRATEGIES[CACHE_ORDER_FALLBACK]
 
 # ---------------------------------------------------------------------------
 # Prompt assembly helpers
@@ -128,6 +148,7 @@ def build_cached(
     git: GitClient,
     llm: InterfaceLLM,
     cache: KVCacheInterface,
+    frequencies: dict[str, int] | None = None,
 ) -> tuple[LLMState, str]:
     """
     Reuse a cached KV state for previously processed context files.
@@ -136,8 +157,8 @@ def build_cached(
     --------
     1. Treat context files as a set — cache lookup is order-independent.
     2. Find the largest cached subset of the context files.
-    3. Order the remaining (uncached) files by size descending and process
-       them incrementally, saving each new KV state back to the cache.
+    3. Order the remaining (uncached) files using the active CACHE_ORDER strategy
+       and process them incrementally, saving each new KV state back to the cache.
     4. Build a short prompt containing only the target file and task.
 
     Returns (last_kv_state, short_prompt_string).
@@ -158,7 +179,7 @@ def build_cached(
     # Order uncached files using the selected CACHE_ORDER strategy.
     remaining = file_set - cached_files
     sizes = {path: git.get_file_size(path) for path in remaining}
-    ordered_remaining = _order_files(remaining, sizes)
+    ordered_remaining = _order_files(remaining, sizes, frequencies=frequencies)
 
     # Process remaining files incrementally, extending the KV state.
     processed = set(cached_files)

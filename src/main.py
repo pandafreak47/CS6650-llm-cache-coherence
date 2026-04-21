@@ -19,6 +19,7 @@ from .commit import commit_changes
 from .git_client import GitClient
 from .kv_cache import InMemoryKVCache, KVCacheInterface, RedisKVCache
 from .llm import AnthropicLLM, DummyLLM, InterfaceLLM
+from .frequency_tracker import FrequencyTrackerInterface, make_frequency_tracker
 from .message_builder import build_naive, build_cached
 from .models import (
     HealthResponse,
@@ -65,8 +66,15 @@ _KV_CACHE_SIZE = int(os.environ.get("KV_CACHE_SIZE", "100"))
 _CACHE_BACKEND = os.environ.get("CACHE_BACKEND", "memory").lower()  # "memory" | "redis"
 _KV_COMPRESS = os.environ.get("KV_COMPRESS", "1").strip() not in ("0", "false", "no")
 _CACHE_ORDER = os.environ.get("CACHE_ORDER", "size_desc").lower()
+_CACHE_ORDER_FALLBACK = os.environ.get("CACHE_ORDER_FALLBACK", "size_desc").lower()
 _LLAMA_SEED = int(os.environ.get("LLAMA_SEED", "-1"))
 _LLAMA_TEMPERATURE = float(os.environ.get("LLAMA_TEMPERATURE", "0.8"))
+
+_freq_tracker: FrequencyTrackerInterface | None = (
+    make_frequency_tracker(_CACHE_BACKEND, os.environ.get("REDIS_URL", ""))
+    if _CACHE_ORDER == "frequency"
+    else None
+)
 
 # ---------------------------------------------------------------------------
 # SQS worker loop
@@ -97,8 +105,12 @@ def _worker_loop() -> None:
                 msg.git_repo.branch,
             )
 
+            if _freq_tracker is not None:
+                _freq_tracker.update(msg.context_files)
+
             if _BUILD_MODE == "cached":
-                kv_state, prompt = build_cached(msg, git, _llm, _cache)
+                frequencies = _freq_tracker.get(msg.context_files) if _freq_tracker else None
+                kv_state, prompt = build_cached(msg, git, _llm, _cache, frequencies=frequencies)
             else:
                 kv_state, prompt = build_naive(msg, git)
 
@@ -200,6 +212,7 @@ def get_metrics():
         cache_backend=_CACHE_BACKEND,
         kv_compress=_KV_COMPRESS,
         cache_order=_CACHE_ORDER,
+        cache_order_fallback=_CACHE_ORDER_FALLBACK,
         llama_seed=_LLAMA_SEED,
         llama_temperature=_LLAMA_TEMPERATURE,
         total_input_tokens=in_tok,
@@ -221,5 +234,7 @@ def clear_metrics():
     _llm.metrics(reset=True)
     _cache.clear()
     _cache.reset_stats()
+    if _freq_tracker is not None:
+        _freq_tracker.clear()
     _total_requests = 0
     return {"cleared": True}
