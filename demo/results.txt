@@ -1,4 +1,27 @@
 naive:
+  Tasks         : 50
+  Seed          : 93
+  Workers       : 1
+  Total time    : 3752.89 s
+  Avg per task  : 75.06 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : naive
+  Cache backend : memory
+  KV compress   : False
+  Llama seed    : 42
+  Llama temp    : 0.8
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 60,117
+  Output tokens : 25,318
+  Requests      : 50
+  LLM latency   : 3688.52 s total
+  --- Local state cache ---
+  Bytes written : 0
+  Bytes read    : 0
+  Hits          : 0  Misses: 0  Rate: 0.0%
+========================================================
 
 redis-cache:
 ========================================================
