@@ -265,3 +265,38 @@ In Memory Cache:
   Bytes read    : 476,590,602
   Hits          : 21  Misses: 29  Rate: 42.0%
 ========================================================
+
+Alternative Caching Protocols:
+========================================================
+  Tasks         : 50
+  Seed          : 93
+  Workers       : 3
+  Total time    : 1500.18 s
+  Avg per task  : 30.00 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : redis
+  Cache order   : size_asc
+  KV compress   : True
+  Llama seed    : 42
+  Llama temp    : 0.8
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 25,092
+  Output tokens : 24,958
+  Requests      : 50
+  LLM latency   : 3261.74 s total
+  --- Local state cache ---
+  Bytes written : 680,009,520
+  Bytes read    : 467,778,420
+  Hits          : 20  Misses: 30  Rate: 40.0%
+
+  --- Per-worker breakdown ---
+  http://3.231.60.1:8080
+    input=8,213  requests=19  latency=1198.93s  hit_rate=36.8%  bytes_read=218,000,292
+  http://52.91.99.194:8080
+    input=10,524  requests=18  latency=1027.00s  hit_rate=33.3%  bytes_read=167,951,280
+  http://98.83.163.47:8080
+    input=6,355  requests=13  latency=1035.81s  hit_rate=53.8%  bytes_read=81,826,848
+========================================================
