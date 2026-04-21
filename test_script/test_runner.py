@@ -406,6 +406,7 @@ def main() -> None:
             print(f"  LLM backend   : {cfg.get('llm_backend', '?')}")
             print(f"  Build mode    : {cfg.get('build_mode', '?')}")
             print(f"  Cache backend : {cfg.get('cache_backend', '?')}")
+            print(f"  Cache order   : {cfg.get('cache_order', '?')}")
             print(f"  KV compress   : {cfg.get('kv_compress', '?')}")
             if cfg.get('llm_backend') == 'llama':
                 print(f"  Llama seed    : {cfg.get('llama_seed', '?')}")
@@ -454,6 +455,7 @@ def main() -> None:
         print(f"  LLM backend   : {first.get('llm_backend', '?')}")
         print(f"  Build mode    : {first.get('build_mode', '?')}")
         print(f"  Cache backend : {first.get('cache_backend', '?')}")
+        print(f"  Cache order   : {first.get('cache_order', '?')}")
         print(f"  KV compress   : {first.get('kv_compress', '?')}")
         if first.get('llm_backend') == 'llama':
             print(f"  Llama seed    : {first.get('llama_seed', '?')}")

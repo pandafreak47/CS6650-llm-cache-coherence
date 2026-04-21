@@ -77,6 +77,7 @@ module "ecs" {
     { name = "KV_CACHE_SIZE",     value = tostring(var.kv_cache_size) },
     { name = "DUMMY_LLM_LATENCY", value = tostring(var.dummy_llm_latency) },
     { name = "CACHE_BACKEND",     value = var.cache_backend },
+    { name = "CACHE_ORDER",      value = var.cache_order },
     { name = "REDIS_URL",         value = var.cache_backend == "redis" ? module.redis[0].redis_url : "" },
     { name = "LLAMA_MODEL_URL",   value = var.llama_model_url },
     { name = "KV_COMPRESS",       value = var.kv_compress ? "1" : "0" },

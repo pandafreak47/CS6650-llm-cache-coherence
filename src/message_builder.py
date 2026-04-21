@@ -6,13 +6,78 @@ Two implementations are provided:
   build_cached — incrementally builds KV state from cached context prefixes,
                  producing a short prompt (target + task only).  Designed for
                  llama.cpp; still correct but wasteful when used with Anthropic.
+
+The ordering strategy used by build_cached to accumulate uncached context files
+is controlled by the CACHE_ORDER environment variable (default: size_desc).
 """
 from __future__ import annotations
+
+import os
 
 from .git_client import GitClient
 from .kv_cache import KVCacheInterface, make_key
 from .llm.interface import InterfaceLLM, FILE_OPEN, FILE_CLOSE
 from .models import LLMState, SQSMessage
+
+# ---------------------------------------------------------------------------
+# Context-file ordering strategies
+#
+# Each strategy receives the set of uncached file paths and their sizes, and
+# returns an ordered list. build_cached accumulates files in this order,
+# saving an intermediate KV state after each one so future tasks can get
+# partial cache hits on any prefix of the ordering.
+# ---------------------------------------------------------------------------
+
+def _order_size_desc(remaining: set[str], sizes: dict[str, int]) -> list[str]:
+    """Largest files first (default). Maximises token savings per cached entry."""
+    return sorted(remaining, key=lambda p: sizes[p], reverse=True)
+
+
+def _order_size_asc(remaining: set[str], sizes: dict[str, int]) -> list[str]:
+    """Smallest files first. Builds many small intermediate states quickly."""
+    return sorted(remaining, key=lambda p: sizes[p], reverse=False)
+
+
+def _order_frequency(remaining: set[str], sizes: dict[str, int]) -> list[str]:
+    """Most-frequently-seen files first. Not yet implemented."""
+    raise NotImplementedError(
+        "CACHE_ORDER=frequency is not yet implemented. "
+        "Requires a cross-worker frequency table (e.g. Redis HINCRBY)."
+    )
+
+
+def _order_directory(remaining: set[str], sizes: dict[str, int]) -> list[str]:
+    """Group files by directory, then by size within each group. Not yet implemented."""
+    raise NotImplementedError(
+        "CACHE_ORDER=directory is not yet implemented."
+    )
+
+
+def _order_git_recency(remaining: set[str], sizes: dict[str, int]) -> list[str]:
+    """Most-recently-committed files last (most stable context first). Not yet implemented."""
+    raise NotImplementedError(
+        "CACHE_ORDER=git_recency is not yet implemented. "
+        "Requires a git log call per file."
+    )
+
+
+_ORDERING_STRATEGIES: dict[str, object] = {
+    "size_desc":   _order_size_desc,
+    "size_asc":    _order_size_asc,
+    "frequency":   _order_frequency,
+    "directory":   _order_directory,
+    "git_recency": _order_git_recency,
+}
+
+CACHE_ORDER: str = os.environ.get("CACHE_ORDER", "size_desc").lower()
+
+if CACHE_ORDER not in _ORDERING_STRATEGIES:
+    raise ValueError(
+        f"Unknown CACHE_ORDER '{CACHE_ORDER}'. "
+        f"Valid values: {list(_ORDERING_STRATEGIES)}"
+    )
+
+_order_files = _ORDERING_STRATEGIES[CACHE_ORDER]
 
 # ---------------------------------------------------------------------------
 # Prompt assembly helpers
@@ -90,11 +155,10 @@ def build_cached(
     else:
         cached_files, kv_state = frozenset(), llm.empty_state()
 
-    # Order uncached files by descending size — largest files contribute the
-    # most tokens and are most likely to be shared with future tasks.
+    # Order uncached files using the selected CACHE_ORDER strategy.
     remaining = file_set - cached_files
     sizes = {path: git.get_file_size(path) for path in remaining}
-    ordered_remaining = sorted(remaining, key=lambda p: sizes[p], reverse=True)
+    ordered_remaining = _order_files(remaining, sizes)
 
     # Process remaining files incrementally, extending the KV state.
     processed = set(cached_files)

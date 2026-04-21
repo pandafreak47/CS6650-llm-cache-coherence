@@ -178,3 +178,13 @@ variable "redis_node_type" {
   description = "ElastiCache node type for the shared Redis cache."
   default     = "cache.t3.micro"
 }
+
+variable "cache_order" {
+  type        = string
+  description = "Context-file accumulation order for build_cached(): 'size_desc' (largest first), 'size_asc' (smallest first), 'frequency', 'directory', 'git_recency'."
+  default     = "size_desc"
+  validation {
+    condition     = contains(["size_desc", "size_asc", "frequency", "directory", "git_recency"], var.cache_order)
+    error_message = "cache_order must be one of: size_desc, size_asc, frequency, directory, git_recency."
+  }
+}
