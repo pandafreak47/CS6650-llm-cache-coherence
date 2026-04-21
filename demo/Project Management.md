@@ -10,7 +10,7 @@ The original plan (see `UpdatedProjectPlan.md` / `ProjectTimeline.md`) outlined 
 
 2. **Compression vs. no-compression was added as an experimental variable.** `LlamaState` blobs contain full logit arrays (`n_tokens × vocab_size × 4 bytes`), which can reach 20–150 MB uncompressed per state. zlib compression (~3–5× reduction) was added as a configurable toggle (`KV_COMPRESS`), and both settings were benchmarked to isolate the compression/decompression CPU overhead from cache transfer savings.
 
-3. **Smart caching order was not multi-strategy compared.** Only the default size-descending strategy was evaluated. Directory grouping and git-recency ordering were not implemented due to time constraints. FIXME - talk about the one test implimented in furture
+3. **Smart caching order was implemented with a swappable strategy framework.** The original plan called for comparing multiple ordering strategies. Rather than hardcoding one, a `CACHE_ORDER` env var selects from a registry of strategies at startup. Two are fully implemented (`size_desc`, `size_asc`) and one novel strategy (`frequency`) was added beyond the original plan.
 
 ---
 
@@ -94,6 +94,30 @@ Later, when evaluating the in-memory backend as a comparison point, it became cl
 
 ---
 
+## Phase 5 — Smart Caching Order
+
+**Status: Complete**
+
+The original plan called for comparing multiple context-file ordering strategies to improve cache hit rate. Instead of testing fixed strategies, the implementation was refactored to make ordering swappable via `CACHE_ORDER` at deploy time, with no code changes required between experiments.
+
+**How ordering affects caching:** When `build_cached` has uncached files `{A, B, C}`, it accumulates them in some order and saves an intermediate KV state after each step — `{A}`, `{A,B}`, `{A,B,C}`. The order determines which intermediate states get cached. A future task with context `{B, C}` gets a cache miss if A always went first (since `{B,C}` was never saved as a standalone key), even if B and C have been processed before. Smarter ordering maximizes the reuse value of those intermediate states.
+
+**Strategies implemented:**
+
+| Strategy | Description | Status |
+|----------|-------------|--------|
+| `size_desc` | Largest files first (original default) | Implemented |
+| `size_asc` | Smallest files first | Implemented |
+| `frequency` | Most-frequently-seen context files first; ties broken by fallback ordering | Implemented |
+| `directory` | Group by directory, then by size | Stubbed |
+| `git_recency` | Most stable files first (least recently modified) | Stubbed |
+
+**Frequency-based ordering design:** A `FrequencyTracker` is maintained per-worker and updated at the start of each task (before the build, so the current task's files count for subsequent tasks on the same worker). With `CACHE_BACKEND=redis`, all workers share a single frequency table via `HINCRBY` on a Redis hash, so cross-worker frequency data accumulates in real time. On a cold start (no frequency data yet), `frequency` falls back to `size_asc` (configurable via `CACHE_ORDER_FALLBACK`). Ties at equal frequency also break by fallback order, since Python's stable sort preserves the fallback-ordered list's relative order.
+
+**Reproducibility:** `POST /metrics/clear` now clears the frequency table alongside the KV cache, ensuring every timed run starts from a cold, identical state.
+
+---
+
 ## Problems Encountered
 
 | Problem | Root Cause | Resolution |
@@ -114,6 +138,6 @@ Later, when evaluating the in-memory backend as a comparison point, it became cl
 | Crash recovery phase | Dropped — system handled all cases correctly by design; results not interesting |
 | LlamaLLM "broken" KV state (text only) | Discovered mid-project; documented as a broken baseline before fixing |
 | Compression not in original plan | Added after Redis OOM issues; became its own experimental variable |
-| 3 smart caching strategies compared | Only size-descending (existing default) evaluated — time constraints |
+| 3 smart caching strategies compared | Implemented swappable strategy framework; `size_desc`, `size_asc`, and `frequency` fully implemented; `directory` and `git_recency` stubbed |
 | Distributed KV cache (stretch goal) | Not implemented |
 | Dependency-aware file locking (stretch goal) | Not implemented |
