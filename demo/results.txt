@@ -1,4 +1,40 @@
 naive:
+========================================================
+  Tasks         : 50
+  Seed          : 93
+  Workers       : 5
+  Total time    : 1339.98 s
+  Avg per task  : 26.80 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : naive
+  Cache backend : memory
+  KV compress   : True
+  Llama seed    : 42
+  Llama temp    : 0.8
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 83,274
+  Output tokens : 31,381
+  Requests      : 50
+  LLM latency   : 5803.06 s total
+  --- Local state cache ---
+  Bytes written : 0
+  Bytes read    : 0
+  Hits          : 0  Misses: 0  Rate: 0.0%
+
+  --- Per-worker breakdown ---
+  http://18.212.80.97:8080
+    input=12,334  requests=12  latency=1144.01s  hit_rate=0.0%  bytes_read=0
+  http://54.198.69.177:8080
+    input=22,035  requests=12  latency=1180.46s  hit_rate=0.0%  bytes_read=0
+  http://3.234.206.152:8080
+    input=17,803  requests=10  latency=1188.51s  hit_rate=0.0%  bytes_read=0
+  http://44.192.68.242:8080
+    input=15,649  requests=8  latency=1166.23s  hit_rate=0.0%  bytes_read=0
+  http://3.83.178.210:8080
+    input=15,453  requests=8  latency=1123.86s  hit_rate=0.0%  bytes_read=0
+========================================================
 
 ========================================================
   Tasks         : 50
