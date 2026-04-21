@@ -170,3 +170,27 @@ In Memory Cache:
   Hits          : 21  Misses: 29  Rate: 42.0%
 ========================================================
 
+========================================================
+  Tasks         : 50
+  Seed          : 93
+  Workers       : 1
+  Total time    : 4949.32 s
+  Avg per task  : 98.99 s
+
+  --- Config ---
+  LLM backend   : llama
+  Build mode    : cached
+  Cache backend : memory
+  KV compress   : True
+  Llama seed    : 42
+  Llama temp    : 0.8
+  --- LLM metrics (aggregated) ---
+  Input tokens  : 27,909
+  Output tokens : 29,850
+  Requests      : 50
+  LLM latency   : 4133.08 s total
+  --- Local state cache ---
+  Bytes written : 823,336,164
+  Bytes read    : 476,590,602
+  Hits          : 21  Misses: 29  Rate: 42.0%
+========================================================
