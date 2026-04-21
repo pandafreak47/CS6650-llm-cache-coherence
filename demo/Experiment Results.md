@@ -73,19 +73,37 @@ LLM latency increases from 1W→3W in naive mode (3,688s → 5,520s) because eac
 
 ---
 
-## Experiment 3 — Smart Caching Order (Planned)
+## Experiment 3 — Smart Caching Order
 
-**Purpose:** Evaluate whether ordering uncached context files by a smarter heuristic than file size improves cache hit rate, and consequently reduces total prefill tokens.
+**Purpose:** Evaluate whether ordering uncached context files by a smarter heuristic than the default size-descending strategy improves cache efficiency and reduces wall time.
 
-**Current implementation:** Uncached context files are accumulated largest-first (size-descending). The rationale is that larger files contribute more tokens and are more likely to be shared with future tasks, maximizing the reuse value of each saved state.
+**Background:** The order in which uncached context files are accumulated determines which intermediate states get saved. Accumulating `A→B→C` saves keys `{A}`, `{A,B}`, `{A,B,C}`. A future task with context `{B,C}` misses all of these even though B and C were processed — because `{B,C}` was never a standalone cached key. Different orderings produce different intermediate states and therefore different hit patterns.
 
-**Planned comparison:** Run the same 50-task workload (Seed 93, 3 workers, Redis cached, compression on) with an alternative ordering strategy and compare hit rate and input tokens against the size-descending baseline (1,919.52s, 30,422 tokens, 40.0% hit rate).
+**Tradeoff:** The ordering strategy is fixed at deploy time and affects every task in the run. A strategy that creates more reusable intermediate states should lower total prefill tokens and LLM latency, but hit rate alone does not fully capture this — a hit on a large multi-file state saves more computation than a hit on a single small file state.
 
-**Why 3 workers:** At 1 worker, caching is already slower than naive — smart ordering cannot overcome the baseline overhead. At 5 workers, the benefit is already present; the ordering effect is harder to isolate from parallelism gains. At 3 workers, caching and naive are nearly tied, so any improvement in hit rate from smarter ordering has the clearest marginal impact.
+**Limitations:** All runs use the same 50-task seed, so task ordering is controlled. However, workers commit to the shared branch concurrently, meaning context file contents accumulate changes across the run — later tasks read slightly different file sizes than earlier ones, introducing minor token count variability between runs. The frequency strategy builds its table from zero each run (cleared on `/metrics/clear`), so its behavior shifts as the run progresses: early tasks use the fallback order, later tasks increasingly use observed frequencies.
 
-| Ordering Strategy | Workers | Total Time | Input Tokens | Hit Rate | vs. Size-Based |
-|-------------------|---------|-----------|-------------|----------|----------------|
-| Size descending (baseline) | 3 | 1,919.52 s | 30,422 | 40.0% | — |
-| TBD | 3 | | | | |
+**Why 3 workers:** At 1 worker, caching is already slower than naive — ordering cannot overcome the Redis overhead. At 5 workers, the benefit is already clear; the ordering effect is harder to isolate. At 3 workers, naive and cached are nearly tied, making the ordering's marginal impact most visible.
+
+### Results (Seed 93, 3 Workers, Redis Cached, Compression On)
+
+| Ordering Strategy | Total Time | Avg/Task | Input Tokens | LLM Latency | Hit Rate | Bytes Written |
+|-------------------|-----------|----------|-------------|-------------|----------|--------------|
+| `size_desc` (baseline) | 1,919.52 s | 38.39 s | 30,422 | 4,346.59 s | 40.0% | ~1.03 GB |
+| `size_asc` | 1,500.18 s | 30.00 s | 25,092 | 3,261.74 s | 40.0% | ~680 MB |
+| `frequency` + `size_desc` fallback | 2,060.97 s | 41.22 s | 30,631 | 4,885.25 s | 42.0% | ~962 MB |
+| `frequency` + `size_asc` fallback | 1,333.83 s | 26.68 s | 26,800 | 2,986.35 s | 40.0% | ~823 MB |
+
+### Analysis
+
+**`size_asc` dramatically outperforms `size_desc`** despite an identical 40% hit rate: 22% faster wall time (1,500s vs. 1,920s), 25% less LLM latency, 17% fewer input tokens, and 34% less data written to Redis. The intuition is that small files tend to be broadly shared utilities (validators, base models, db connectors) — accumulating them first creates early intermediate states covering exactly those shared files, which many future tasks can hit. Large files tend to be feature-specific and appear in fewer task contexts, so caching them first produces intermediate states that rarely match future task prefixes.
+
+**`frequency` + `size_desc` fallback is the worst performer** (2,061s, 7% slower than baseline). With only 50 tasks across 3 workers, the frequency table has very few observations early in the run — most tasks use the cold-start fallback, which is `size_desc`. The result is essentially `size_desc` with the overhead of Redis frequency tracking. The frequency signal doesn't have time to dominate.
+
+**`frequency` + `size_asc` fallback is the best performer** (1,334s, 30% faster than `size_desc` baseline, 11% faster than pure `size_asc`). Two effects compound: the cold-start fallback is already the strongest ordering, and as the run progresses, the frequency table refines the order to further prioritize files that genuinely co-appear most often. Notably, this run processes more input tokens than `size_asc` (26,800 vs. 25,092) while being faster — the hits it gets are on larger, multi-file states that save more prefill time per hit, even though the raw hit rate is the same.
+
+**The fallback dominates over frequency in short runs.** With 50 tasks across 3 workers, each worker sees only ~17 tasks. The frequency table only becomes meaningful after several tasks have been processed, leaving most of the run on fallback order. In longer runs or with more repeated context patterns, the frequency signal would compound and could diverge meaningfully from the fallback.
+
+**Conclusion:** `size_asc` is a better default than `size_desc` for this workload, where shared context files tend to be small utilities. The `frequency` strategy with a `size_asc` fallback produces the best results by combining the strong cold-start ordering with adaptive refinement, and would likely show larger gains over pure `size_asc` in longer runs where the frequency table has more time to mature.
 
 ---
